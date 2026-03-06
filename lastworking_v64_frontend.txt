@@ -3277,6 +3277,43 @@
       color: #dc2626;
     }
 
+    #mod-inventory .inv-tab-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: #dc2626;
+      color: #fff;
+      font-size: 0.68rem;
+      font-weight: 700;
+      margin-left: 4px;
+      vertical-align: middle;
+      line-height: 1;
+    }
+
+    #mod-inventory .inv-approval-overdue td {
+      background: #fff7ed;
+    }
+
+    #mod-inventory .inv-approval-overdue .inv-overdue-label {
+      color: #d97706;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    #mod-inventory .inv-approval-critical td {
+      background: #fef2f2;
+    }
+
+    #mod-inventory .inv-approval-critical .inv-overdue-label {
+      color: #dc2626;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
     /* Chart Containers */
     .chart-box {
       background: var(--bg-surface);
@@ -9321,7 +9358,7 @@
       <div class="tab-nav inventory-tabs">
         <button class="tab-btn active" onclick="inventoryTab('stock', event)">Stock</button>
         <button class="tab-btn" onclick="inventoryTab('constitution', event)">Device Constitution</button>
-        <button class="tab-btn" onclick="inventoryTab('approvals', event)">Approvals</button>
+        <button class="tab-btn" onclick="inventoryTab('approvals', event)">Approvals <span id="inv-approvals-badge" class="inv-tab-badge" style="display:none;"></span></button>
         <button class="tab-btn" onclick="inventoryTab('liquidation', event)">Liquidation</button>
         <button class="tab-btn" onclick="inventoryTab('prod-batch', event)">Prod Batch</button>
         <button class="tab-btn" onclick="inventoryTab('refill', event)">Refill Batch</button>
@@ -12297,7 +12334,7 @@ function loadInventoryData() {
         })
         .withFailureHandler((err) => {
             console.error(err);
-            alert('Failed to load inventory data: ' + (err?.message || err));
+            showToast('Failed to load inventory data: ' + (err?.message || err), 'error', 6000);
             renderInventoryAll();
         })
         .getInventoryData();
@@ -12339,7 +12376,7 @@ function validateInventoryTable(type) {
 function saveInventoryTable(type) {
     const result = validateInventoryTable(type);
     if (!result.valid) {
-        alert(`${result.title}: ${result.message}`);
+        showToast(`${result.title}: ${result.message}`, 'warning', 5000);
         return;
     }
     saveInventoryData(type);
@@ -12347,14 +12384,14 @@ function saveInventoryTable(type) {
 
 function saveInventoryData(type) {
     if (typeof google === 'undefined' || !google.script?.run) {
-        alert('Inventory save is only available in the Apps Script deployment.');
+        showToast('Inventory save is only available in the Apps Script deployment.', 'warning');
         return;
     }
     const tablesToValidate = type ? [type] : ['constitution', 'parts', 'built', 'liquidation', 'clients', 'approvals', 'refill'];
     for (const tableType of tablesToValidate) {
         const result = validateInventoryTable(tableType);
         if (!result.valid) {
-            alert(`${result.title}: ${result.message}`);
+            showToast(`${result.title}: ${result.message}`, 'warning', 5000);
             return;
         }
     }
@@ -12381,11 +12418,11 @@ function saveInventoryData(type) {
     google.script.run
         .withSuccessHandler((res) => {
             setInventoryDirty(false);
-            alert(res?.msg || 'Inventory saved.');
+            showToast(res?.msg || 'Inventory saved.', 'success');
         })
         .withFailureHandler((err) => {
             console.error(err);
-            alert('Failed to save inventory data: ' + (err?.message || err));
+            showToast('Failed to save inventory data: ' + (err?.message || err), 'error', 6000);
         })
         .saveInventoryData(payload);
 }
@@ -12813,15 +12850,45 @@ function toggleInventoryAcknowledged(id, checked) {
     renderInventoryLiquidation();
 }
 
+function updateInventoryApprovalBadge() {
+    const badge = document.getElementById('inv-approvals-badge');
+    if (!badge) return;
+    const pendingCount = inventoryState.approvals.filter(r => r.status === 'Pending').length;
+    if (pendingCount > 0) {
+        badge.textContent = pendingCount;
+        badge.style.display = '';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
 function refreshInventoryApprovals() {
     const tbody = document.getElementById('inv-approvals-body');
     if (!tbody) return;
     tbody.innerHTML = '';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     inventoryState.approvals.forEach(row => {
         const statusClass = row.status ? row.status.toLowerCase() : 'pending';
+        const isPending = !row.status || row.status === 'Pending';
+        let overdueClass = '';
+        let overdueLabel = '';
+        if (isPending && row.dueDate) {
+            const due = new Date(row.dueDate);
+            due.setHours(0, 0, 0, 0);
+            const daysOverdue = Math.floor((today - due) / 86400000);
+            if (daysOverdue > 2) {
+                overdueClass = 'inv-approval-critical';
+                overdueLabel = `<span class="inv-overdue-label">⚠ ${daysOverdue}d overdue</span>`;
+            } else if (daysOverdue > 0) {
+                overdueClass = 'inv-approval-overdue';
+                overdueLabel = `<span class="inv-overdue-label">⚠ ${daysOverdue}d overdue</span>`;
+            }
+        }
         const tr = document.createElement('tr');
+        if (overdueClass) tr.classList.add(overdueClass);
         tr.innerHTML = `
-          <td>${row.requestId}</td>
+          <td>${row.requestId}${overdueLabel}</td>
           <td>${row.requestedBy || '-'}</td>
           <td><input type="number" class="db-input" value="${row.tatDays ?? 3}" oninput="updateInventoryFieldInline('approvals','${row.requestId}','tatDays',this.value)"></td>
           <td>
@@ -12840,6 +12907,7 @@ function refreshInventoryApprovals() {
         tbody.appendChild(tr);
     });
     applyInventoryEditState('approvals');
+    updateInventoryApprovalBadge();
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-approvals-table'));
 }
 
