@@ -2642,6 +2642,30 @@
       border-radius: 12px;
       vertical-align: middle;
     }
+    /* R13 — Undo bar */
+    #rgb-undo-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 14px;
+      background: #fffbeb;
+      border: 1px solid #fbbf24;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #92400e;
+      margin: 4px 6px;
+    }
+    #rgb-undo-bar span { flex-shrink: 0; }
+    #rgb-undo-timer { font-size: 11px; color: #b45309; }
+    /* R15 — server range chip */
+    #rgb-server-range-chip {
+      font-size: 11px;
+      color: #6b7280;
+      background: #f3f4f6;
+      padding: 2px 8px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
 
     /* R8 — rows-per-page selector */
     .rgb-per-page-select {
@@ -7340,6 +7364,8 @@
             <button class="btn btn-red" onclick="resetData()">Reset</button>
             <div class="divider-v"></div>
             <button class="btn btn-outline" onclick="refreshRgbCalculatedMetrics()">Refresh Metrics</button>
+            <label style="font-size:11px; font-weight:600; color:#4f46e5; white-space:nowrap;" for="qcBatchInput">QC Batch:</label>
+            <input type="text" id="qcBatchInput" class="search-input" placeholder="(optional)" title="QC Batch ID assigned to rows when moving to QC" style="width:110px;">
             <button id="btn-rgb-move" class="btn btn-indigo" onclick="moveDataToQC()">Move to QC ➔ <span id="rgb-move-count"></span></button>
             <span id="rgb-sel-count"></span>
           </div>
@@ -7371,6 +7397,16 @@
             <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('30d')">Last 30d</button>
             <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('month')">This Month</button>
             <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('all')">All</button>
+            <div class="divider-v"></div>
+            <span style="font-size:11px; color:#6b7280; font-weight:500;">Server:</span>
+            <button id="btn-load-all" class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="loadAllRgbFromServer()" title="Load ALL records from server — may be slow for large datasets (>5 000 rows)">📡 Load All</button>
+            <span id="rgb-server-range-chip"></span>
+          </div>
+
+          <div id="rgb-undo-bar" role="alert">
+            <span id="rgb-undo-msg"></span>
+            <button class="btn btn-orange" style="font-size:12px; padding:3px 10px;" onclick="undoLastRgbMove()">↩ Undo last move</button>
+            <span id="rgb-undo-timer"></span>
           </div>
 
           <input type="file" id="csvImport" accept=".csv" style="display:none;" onchange="client_ImportCSV_CreateRGBData(this)">
@@ -14270,7 +14306,8 @@ function fetchOperationalDataOnce(options = {}) {
   const {
     reason = 'unknown',
     onSuccess = null,
-    onFailure = null
+    onFailure = null,
+    forceAll = false   // R15: when true, bypass date-range filtering and load all records
   } = options;
 
   const hasServer = (typeof google !== 'undefined' && google.script?.run);
@@ -14284,13 +14321,34 @@ function fetchOperationalDataOnce(options = {}) {
 
   window.__opDataInFlight = true;
 
-  google.script.run
+  // R15: Compute days from date-from input (if set) for bounded server-side filtering
+  let serverDays = null;
+  if (!forceAll) {
+    const fromVal = (document.getElementById('date-rgb-from')?.value || '').trim();
+    if (fromVal) {
+      const fromDate = new Date(fromVal + 'T00:00:00');
+      const today = new Date();
+      serverDays = Math.max(1, Math.ceil((today - fromDate) / 86400000) + 1);
+    }
+  }
+
+  const gasRunner = google.script.run
     .withSuccessHandler(function (res) {
       try {
         if (res && res.rgbData) rgbData = res.rgbData;
         if (res && res.qcData) qcData = res.qcData;
 
         window.__opDataLastAt = Date.now();
+        window.__rgbServerMode = (serverDays !== null) ? 'range' : 'all';
+
+        // R13: Clear undo state when data is refreshed from server
+        const undoBar = document.getElementById('rgb-undo-bar');
+        if (undoBar) undoBar.style.display = 'none';
+        if (window.__lastRgbMoveTimer) clearInterval(window.__lastRgbMoveTimer);
+        window.__lastRgbMove = null;
+
+        // R15: Update server-range chip
+        updateRgbServerRangeChip(serverDays, res?.__info);
 
         if (typeof onSuccess === 'function') onSuccess(res);
       } finally {
@@ -14304,13 +14362,143 @@ function fetchOperationalDataOnce(options = {}) {
       } finally {
         window.__opDataInFlight = false;
       }
+    });
+
+  // R15: Use bounded call when date-from is set; fall back to full load
+  if (serverDays !== null) {
+    gasRunner.getOperationalDataRecent(serverDays);
+  } else {
+    gasRunner.getOperationalData();
+  }
+}
+
+// ============================
+// R13 — Undo last Move-to-QC
+// ============================
+window.__lastRgbMove = null;
+window.__lastRgbMoveTimer = null;
+
+/**
+ * Show the undo bar for `seconds` seconds after a Move-to-QC succeeds.
+ */
+function showRgbUndoBar(n, seconds) {
+  const bar   = document.getElementById('rgb-undo-bar');
+  const msg   = document.getElementById('rgb-undo-msg');
+  const timer = document.getElementById('rgb-undo-timer');
+  if (!bar || !msg || !timer) return;
+
+  // Clear any previous countdown
+  if (window.__lastRgbMoveTimer) clearInterval(window.__lastRgbMoveTimer);
+
+  msg.textContent = `${n} row(s) moved to QC.`;
+  timer.textContent = `(${seconds}s)`;
+  bar.style.display = 'flex';
+
+  let remaining = seconds;
+  window.__lastRgbMoveTimer = setInterval(function () {
+    remaining--;
+    timer.textContent = `(${remaining}s)`;
+    if (remaining <= 0) {
+      clearInterval(window.__lastRgbMoveTimer);
+      window.__lastRgbMoveTimer = null;
+      bar.style.display = 'none';
+      window.__lastRgbMove = null;
+    }
+  }, 1000);
+}
+
+/**
+ * Undo the last Move-to-QC operation (within 60 s).
+ * Calls syncMoveDataToRGB with the stored req payload.
+ */
+function undoLastRgbMove() {
+  const move = window.__lastRgbMove;
+  if (!move) { showToast('Nothing to undo.', 'info', 3000); return; }
+
+  const ageMs = Date.now() - move.movedAt;
+  if (ageMs > 65000) {
+    showToast('Undo window expired (> 60 s). Use the "Move to RGB/Abs" button instead.', 'warning', 5000);
+    return;
+  }
+
+  const hasServer = (typeof google !== 'undefined' && google.script?.run);
+  if (!hasServer) {
+    showToast('Undo requires the Apps Script deployment.', 'info', 4000);
+    return;
+  }
+
+  // Hide undo bar immediately
+  const bar = document.getElementById('rgb-undo-bar');
+  if (bar) bar.style.display = 'none';
+  if (window.__lastRgbMoveTimer) { clearInterval(window.__lastRgbMoveTimer); window.__lastRgbMoveTimer = null; }
+  window.__lastRgbMove = null;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.ok !== true) {
+        showToast('Undo failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
+        return;
+      }
+      showToast(`Undo complete — ${move.n} row(s) moved back to RGB/Abs.`, 'success', 5000);
+      google.script.run.withSuccessHandler(function (data) {
+        if (data?.rgbData) window.rgbData = rgbData = data.rgbData;
+        if (data?.qcData)  window.qcData  = qcData  = data.qcData;
+        renderTable('rgb');
+        renderTable('qaqc');
+      }).getOperationalData();
     })
-    .getOperationalData();
+    .withFailureHandler(function (err) {
+      showToast('Undo failed: ' + (err?.message || err), 'error', 6000);
+    })
+    .syncMoveDataToRGB(move.req);
+}
+
+// ==========================================
+// R15 — Server-side date-range-bounded load
+// ==========================================
+
+/**
+ * Force-load ALL records from the server (bypasses date-range filtering).
+ * Use when the current loaded window is too narrow.
+ */
+function loadAllRgbFromServer() {
+  const btn = document.getElementById('btn-load-all');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
+  fetchOperationalDataOnce({
+    reason: 'load-all',
+    forceAll: true,
+    onSuccess: function () {
+      if (btn) { btn.disabled = false; btn.textContent = '📡 Load All'; }
+      renderTable('rgb');
+      renderTable('qaqc');
+    },
+    onFailure: function () {
+      if (btn) { btn.disabled = false; btn.textContent = '📡 Load All'; }
+    }
+  });
+}
+
+/**
+ * Update the server-range chip in the RGB toolbar.
+ * @param {number|null} days  - days used for getOperationalDataRecent, or null for full load
+ * @param {Object} info       - optional __info metadata from server response
+ */
+function updateRgbServerRangeChip(days, info) {
+  const chip = document.getElementById('rgb-server-range-chip');
+  if (!chip) return;
+  if (days === null || days === undefined) {
+    chip.textContent = 'All data loaded';
+    chip.title = info ? `rgb=${info.totalRgb ?? '?'} qc=${info.totalQc ?? '?'} rows` : '';
+  } else {
+    chip.textContent = `Last ${days}d loaded`;
+    chip.title = info
+      ? `rgb=${info.filteredRgb ?? '?'}/${info.totalRgb ?? '?'} qc=${info.filteredQc ?? '?'}/${info.totalQc ?? '?'} rows`
+      : `Server filtered to last ${days} days`;
+  }
 }
 
 /**
  * Load QC/Prod batch master lists ONCE (dedup concurrent calls).
- * Memory-first (dbMasters), then server (srvr_getMasterLists).
  */
 function loadMasterListsOnce(force = false) {
   // ✅ Safe init (prevents undefined access)
@@ -21842,6 +22030,7 @@ function moveDataToQC() {
         showToast('Move failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
         return;
       }
+      const moved   = req.length;
       const removed = Number(res.removed ?? moved);
       const skipped = Number(res.skipped ?? 0);
 
@@ -21850,6 +22039,10 @@ Removed from RGB/Abs: ${removed}`;
       if (skipped) msg += `
 Skipped (not found / duplicate): ${skipped}`;
       showToast(msg, 'success', 5000);
+
+      // R13: Store undo state for 60-second in-session undo window
+      window.__lastRgbMove = { req: req.slice(), n: moved, movedAt: Date.now() };
+      showRgbUndoBar(moved, 60);
 
         // Clear selection quickly so UI does not appear stuck while heavy refresh runs.
       window.checkedRows.rgb = [];
