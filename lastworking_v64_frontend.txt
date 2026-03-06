@@ -21682,6 +21682,7 @@ function moveDataToQC() {
       if (!res || res.ok !== true) {
         showToast('Move failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
         return;
+      }
       const removed = Number(res.removed ?? moved);
       const skipped = Number(res.skipped ?? 0);
 
@@ -21749,6 +21750,7 @@ function moveDataToRGB() {
 
   if (!req.length) {
     showToast('Selected IDs were not found in current QA/QC data. Refresh and try again.', 'warning', 5000); return;
+  }
 
   google.script.run
     .withSuccessHandler(function(res) {
