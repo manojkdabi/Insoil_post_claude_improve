@@ -6742,50 +6742,6 @@
 </head>
 
 <body>
-  <script>
-    (function () {
-      if (window.nmSetDebugEnabled) return;
-      const expose = (fn) => {
-        try {
-          globalThis.nmSetDebugEnabled = fn;
-        } catch (e) {
-          // ignore global exposure failures
-        }
-        try {
-          window.nmSetDebugEnabled = fn;
-        } catch (e) {
-          // ignore window exposure failures
-        }
-        try {
-          if (window.top && window.top !== window) {
-            window.top.nmSetDebugEnabled = fn;
-          }
-        } catch (e) {
-          // ignore top window exposure failures
-        }
-        try {
-          if (window.parent && window.parent !== window) {
-            window.parent.nmSetDebugEnabled = fn;
-          }
-        } catch (e) {
-          // ignore parent window exposure failures
-        }
-      };
-      const helper = function (enabled) {
-        try {
-          if (enabled) {
-            window.localStorage?.setItem('nmDebug', '1');
-          } else {
-            window.localStorage?.removeItem('nmDebug');
-          }
-        } catch (e) {
-          // ignore storage failures
-        }
-        window.NM_DEBUG = !!enabled;
-      };
-      expose(helper);
-    })();
-  </script>
   <!-- InsoilTool version: 2026-01-16a (single-file UI) -->
 
   <div id="login-overlay"

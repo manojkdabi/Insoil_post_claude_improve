@@ -4710,34 +4710,70 @@ function generateServicePdf(payload) {
 // =============================
 // ... User Auth & Admin functions (Keep existing) ...
 function checkLogin(username, password) {
+  // ── Input validation: reject empty or excessively long inputs (DoS guard) ──
+  const u = String(username || '').trim();
+  const p = String(password || '');
+  if (!u || !p) return { success: false, msg: 'Username and password are required.' };
+  if (u.length > 100 || p.length > 200) return { success: false, msg: 'Invalid credentials.' };
+
+  // ── Brute-force protection: max 5 failed attempts per username per 15 min ──
+  // Cache key is a short hex digest of the lowercase username so raw usernames
+  // are never stored in cache keys (privacy-in-depth).
+  const attemptKey = 'BRUTE_' + Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    u.toLowerCase(),
+    Utilities.Charset.UTF_8
+  ).map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('').substring(0, 16);
+
+  const MAX_ATTEMPTS  = 5;
+  const LOCKOUT_SEC   = 900; // 15 minutes
+  const attemptCache  = CacheService.getScriptCache();
+  const attempts      = parseInt(attemptCache.get(attemptKey) || '0', 10);
+
+  if (attempts >= MAX_ATTEMPTS) {
+    return { success: false, msg: 'Too many failed login attempts. Please try again in 15 minutes.' };
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Users');
   // No backdoor credentials — Users sheet must be initialized by an admin.
   if (!sheet) return { success: false, msg: 'System not initialized. Please ask your administrator to create the Users sheet.' };
   const data = sheet.getDataRange().getValues();
-  const inputHash = hashPassword_(password);
+  const inputHash = hashPassword_(p);
   for (let i = 1; i < data.length; i++) {
     const storedCred = String(data[i][2]).trim();
     // Support both hashed and (legacy) plaintext passwords for backward compatibility.
     // Hashed passwords are 64-char hex strings; legacy entries are shorter.
     const storedHash = storedCred.length === 64 ? storedCred : hashPassword_(storedCred);
-    if ((String(data[i][0]).trim() === username || String(data[i][1]).trim() === username) && inputHash === storedHash) {
+    if ((String(data[i][0]).trim() === u || String(data[i][1]).trim() === u) && inputHash === storedHash) {
       // Opportunistically upgrade legacy plaintext to hash on successful login
       if (storedCred.length !== 64) {
         sheet.getRange(i + 1, 3).setValue(inputHash);
+      }
+      // Reset failed-attempt counter on successful login
+      try { attemptCache.remove(attemptKey); } catch (e) {
+        Logger.log('checkLogin: failed to clear brute-force counter: ' + e.message);
       }
       let modules = null;
       if (data[i].length > 5 && data[i][5]) modules = String(data[i][5]).split(',').map(s => s.trim());
       return { success: true, role: data[i][3], user: String(data[i][0]), modules: modules };
     }
   }
-  return { success: false, msg: "Invalid credentials" };
+
+  // Increment failure counter before returning the generic error
+  try { attemptCache.put(attemptKey, String(attempts + 1), LOCKOUT_SEC); } catch (e) {
+    Logger.log('checkLogin: failed to record failed attempt: ' + e.message);
+  }
+  return { success: false, msg: 'Invalid credentials.' };
 }
 
 function adminCreateUser(data) {
   requireAdminRole_();
   if (!data || !data.empId || !data.email || !data.password || !data.role) {
     throw new Error('adminCreateUser: empId, email, password, and role are required.');
+  }
+  if (String(data.password).length < 6) {
+    throw new Error('Password must be at least 6 characters.');
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Users');
@@ -6957,6 +6993,28 @@ function getMistralApiKey_() {
 
 
 function aiQCDiagnoseMistral(payloadJson) {
+  // ── AI rate limiting: max 20 calls per hour per deployment (cost guard) ──
+  // Hourly key so the counter resets automatically each clock-hour.
+  // Note: GAS CacheService does not support atomic increment, so concurrent requests
+  // within the same second may marginally exceed the limit — this is acceptable given
+  // the hourly budget is a cost-control measure, not a hard security boundary.
+  const AI_RATE_KEY     = 'AI_CALLS_' + new Date().toISOString().slice(0, 13);
+  const AI_MAX_PER_HOUR = 20;
+  try {
+    const rateCache = CacheService.getScriptCache();
+    const callCount = parseInt(rateCache.get(AI_RATE_KEY) || '0', 10);
+    if (callCount >= AI_MAX_PER_HOUR) {
+      return {
+        ok: false,
+        message: 'AI diagnostic rate limit reached (' + AI_MAX_PER_HOUR + ' calls/hour). Please try again later.'
+      };
+    }
+    rateCache.put(AI_RATE_KEY, String(callCount + 1), 3600);
+  } catch (e) {
+    // Non-fatal: allow the call to proceed but log so admins notice persistent CacheService outages.
+    Logger.log('aiQCDiagnoseMistral: rate-limit cache unavailable — proceeding without limit: ' + e.message);
+  }
+
   try {
     const parsedInput = safeJsonParse_(payloadJson, {});
     if (!parsedInput.ok) return { ok: false, error: 'Invalid payload JSON: ' + parsedInput.error };
@@ -8153,45 +8211,7 @@ function srvrSetRgbBatchFields(payload) {
   return { ok: true, row: sheetRow, prodBatchId: prodBatchId, qcBatchId: qcBatchId };
 }
 
-/**
- * Master lists source of truth:
- *   - QC_Batch sheet, header: QCBatch_ID
- *   - Prod_Batch sheet, header: ProdBatch_ID
- *
- * Returns:
- *   { qcBatchIds: ['Default', ...], prodBatchIds: ['Default', ...], __status:'OK' }
- */
-function srvr_getMasterLists() {
-  const out = { qcBatchIds: ['Default'], prodBatchIds: ['Default'], __status: 'OK' };
-
-  try {
-    const cache = CacheService.getScriptCache();
-    const cached = cache.get('MASTER_LISTS_V1');
-    if (cached) {
-      const obj = JSON.parse(cached);
-      if (obj && Array.isArray(obj.qcBatchIds) && Array.isArray(obj.prodBatchIds)) return obj;
-    }
-
-    const ss = SpreadsheetApp.getActive();
-    if (!ss) throw new Error('No active spreadsheet');
-
-    out.qcBatchIds = readIdListFromSheet_(ss, 'QC_Batch', 'QCBatch_ID');
-    out.prodBatchIds = readIdListFromSheet_(ss, 'Prod_Batch', 'ProdBatch_ID');
-
-    // ensure Default is present + sorted with Default first
-    out.qcBatchIds = normalizeDefaultFirst_(out.qcBatchIds);
-    out.prodBatchIds = normalizeDefaultFirst_(out.prodBatchIds);
-
-    cache.put('MASTER_LISTS_V1', JSON.stringify(out), 300); // 5 minutes
-    return out;
-
-  } catch (e) {
-    Logger.log('srvr_getMasterLists error: ' + e.message);
-    out.__status = 'ERROR';
-    out.__error = e.message;
-    return out;
-  }
-}
+// srvr_getMasterLists is defined below (after getQCBatchOptions/getProdBatchOptions).
 
 /** Helper: read unique IDs from sheet by header (case-insensitive match) */
 function readIdListFromSheet_(ss, sheetName, headerName) {
@@ -8236,9 +8256,21 @@ function getProdBatchOptions() {
   return (res && Array.isArray(res.prodBatchIds) && res.prodBatchIds.length) ? res.prodBatchIds : ['Default'];
 }
 
+/**
+ * Master lists source of truth:
+ *   - QC_Batch sheet,  header: QCBatch_ID
+ *   - Prod_Batch sheet, header: ProdBatch_ID
+ *
+ * Returns:
+ *   { qcBatchIds: ['Default', ...], prodBatchIds: ['Default', ...], __status: 'OK' }
+ * On error returns the same shape with __status:'ERROR' and __error message so callers
+ * can distinguish network/sheet problems from an empty list.
+ */
 function srvr_getMasterLists() {
   const CACHE_KEY = 'MASTER_LISTS_v1';
-  const CACHE_TTL_SEC = 180; // 3 minutes
+  const CACHE_TTL_SEC = 300; // 5 minutes
+
+  const out = { qcBatchIds: ['Default'], prodBatchIds: ['Default'], __status: 'OK' };
 
   // 1) cache
   try {
@@ -8251,12 +8283,9 @@ function srvr_getMasterLists() {
   } catch (e) { }
 
   // 2) build
-  const out = {
-    qcBatchIds: ['Default'],
-    prodBatchIds: ['Default']
-  };
-
+  try {
   const ss = SpreadsheetApp.getActive();
+  if (!ss) throw new Error('No active spreadsheet');
 
   // QC_Batch
   try {
@@ -8300,6 +8329,13 @@ function srvr_getMasterLists() {
     }
   } catch (e) {
     // keep defaults
+  }
+
+  } catch (e) {
+    Logger.log('srvr_getMasterLists build error: ' + e.message);
+    out.__status = 'ERROR';
+    out.__error = e.message;
+    return out;
   }
 
   // 3) cache
