@@ -24855,12 +24855,9 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
 
     console.log(`[RGB Location] Saving location for ${deviceId}/${testId}: Place=${place}, GPS=${gps}, State=${state}`);
 
-    // Check if backend function exists
-    if (!google || !google.script || !google.script.run || typeof google.script.run.updateRGBLocationData_ === 'undefined') {
-        console.error('[RGB Location] Backend function updateRGBLocationData_ not found. Please deploy backend_MN_v1 file.');
-        if (typeof showToast === 'function') {
-            showToast('Backend function not deployed. Please deploy backend_MN_v1', 'warning');
-        }
+    // Check if GAS client API is available
+    if (!google || !google.script || !google.script.run) {
+        console.error('[RGB Location] google.script.run is not available — running outside GAS context?');
         return;
     }
 
