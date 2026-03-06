@@ -3314,6 +3314,40 @@
       font-weight: 700;
     }
 
+    #mod-inventory .inv-search-wrap {
+      padding: 6px 0 4px 0;
+    }
+    #mod-inventory .inv-search-input {
+      width: 100%;
+      max-width: 320px;
+      padding: 6px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+    }
+    #mod-inventory .inv-parts-low-stock td {
+      background: #fef9c3;
+    }
+    #mod-inventory .inv-parts-low-stock .inv-low-stock-label {
+      color: #b45309;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    #mod-inventory .inv-low-stock-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #b45309;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-left: 8px;
+    }
+
     /* Chart Containers */
     .chart-box {
       background: var(--bg-surface);
@@ -9355,6 +9389,24 @@
           <button class="btn btn-blue" onclick="refreshInventoryData()">Refresh Inventory</button>
         </div>
       </div>
+      <div class="dashboard-kpi-strip" id="inv-kpi-strip" style="margin: 0 0 12px 0;">
+        <div class="dashboard-kpi" data-accent="indigo">
+          <span>Parts Types</span>
+          <strong id="inv-kpi-parts-types">—</strong>
+        </div>
+        <div class="dashboard-kpi" data-accent="amber">
+          <span>Pending Approvals</span>
+          <strong id="inv-kpi-pending">—</strong>
+        </div>
+        <div class="dashboard-kpi" data-accent="rose">
+          <span>Low Stock Items</span>
+          <strong id="inv-kpi-low-stock">—</strong>
+        </div>
+        <div class="dashboard-kpi" data-accent="teal">
+          <span>Open Liquidations</span>
+          <strong id="inv-kpi-open-liq">—</strong>
+        </div>
+      </div>
       <div class="tab-nav inventory-tabs">
         <button class="tab-btn active" onclick="inventoryTab('stock', event)">Stock</button>
         <button class="tab-btn" onclick="inventoryTab('constitution', event)">Device Constitution</button>
@@ -9385,11 +9437,13 @@
               </label>
               <button class="btn btn-green" onclick="addInventoryRow('constitution')">+ Row</button>
               <button class="btn btn-outline" onclick="triggerInventoryCsv('constitution')">Import CSV</button>
+              <button class="btn btn-outline" onclick="exportInventoryCsv('constitution')">Export CSV</button>
               <button class="btn btn-outline btn-red" onclick="deleteInventoryRows('constitution')">Delete Selected</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('constitution')">Save</button>
               <input id="inv-constitution-csv" type="file" accept=".csv,text/csv" style="display:none" onchange="importInventoryCsv('constitution', this)">
             </div>
           </div>
+          <div class="inv-search-wrap"><input class="inv-search-input" type="search" placeholder="Search…" oninput="filterInventoryTable(this, 'inv-constitution-table')"></div>
           <div class="inventory-table-wrap">
             <table id="inv-constitution-table" class="selectable-table">
               <thead>
@@ -9432,7 +9486,7 @@
         <div id="inv-stock-parts" class="inventory-panel active">
           <div class="inventory-panel-header">
             <div>
-              <div class="inventory-panel-title">Parts Stock</div>
+              <div class="inventory-panel-title">Parts Stock <span id="inv-low-stock-chip" class="inv-low-stock-chip" style="display:none;">⚠ <span id="inv-low-stock-count">0</span> items low stock</span></div>
               <div class="inventory-panel-subtitle">Issue/Sale requests are created at row add.</div>
             </div>
             <div class="inventory-actions">
@@ -9441,13 +9495,15 @@
               </label>
               <button class="btn btn-green" onclick="addInventoryRow('parts')">+ Row</button>
               <button class="btn btn-outline" onclick="triggerInventoryCsv('parts')">Import CSV</button>
+              <button class="btn btn-outline" onclick="exportInventoryCsv('parts')">Export CSV</button>
               <button class="btn btn-outline btn-red" onclick="deleteInventoryRows('parts')">Delete Selected</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('parts')">Save</button>
               <input id="inv-parts-csv" type="file" accept=".csv,text/csv" style="display:none" onchange="importInventoryCsv('parts', this)">
             </div>
           </div>
+          <div class="inv-search-wrap"><input class="inv-search-input" type="search" placeholder="Search…" oninput="filterInventoryTable(this, 'inv-parts-table')"></div>
           <div class="inventory-table-wrap">
-            <table id="inv-parts-table" class="selectable-table">
+            <table id="inv-parts-table"class="selectable-table">
               <thead>
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('parts', this)"></th>
@@ -9456,6 +9512,7 @@
                   <th>Item</th>
                   <th>Unit</th>
                   <th>In-stock Qty</th>
+                  <th>Computed Stock</th>
                   <th>Cost (Rs)/Unit</th>
                   <th>Movement Type</th>
                   <th>Date of Movement</th>
@@ -9464,6 +9521,7 @@
                   <th>Confirmed by</th>
                   <th>Issued to</th>
                   <th>Request ID</th>
+                  <th>Reorder Level</th>
                 </tr>
               </thead>
               <tbody id="inv-parts-body"></tbody>
@@ -9483,11 +9541,13 @@
               </label>
               <button class="btn btn-green" onclick="addInventoryRow('built')">+ Row</button>
               <button class="btn btn-outline btn-red" onclick="deleteInventoryRows('built')">Delete Selected</button>
+              <button class="btn btn-outline" onclick="exportInventoryCsv('built')">Export CSV</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('built')">Save</button>
             </div>
           </div>
+          <div class="inv-search-wrap"><input class="inv-search-input" type="search" placeholder="Search…" oninput="filterInventoryTable(this, 'inv-built-table')"></div>
           <div class="inventory-table-wrap">
-            <table id="inv-built-table" class="selectable-table">
+            <table id="inv-built-table"class="selectable-table">
               <thead>
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('built', this)"></th>
@@ -9531,11 +9591,13 @@
               </label>
               <button class="btn btn-green" onclick="addInventoryRow('liquidation')">+ Issue/Sale</button>
               <button class="btn btn-outline btn-red" onclick="deleteInventoryRows('liquidation')">Delete Selected</button>
+              <button class="btn btn-outline" onclick="exportInventoryCsv('liquidation')">Export CSV</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('liquidation')">Save</button>
             </div>
           </div>
+          <div class="inv-search-wrap"><input class="inv-search-input" type="search" placeholder="Search…" oninput="filterInventoryTable(this, 'inv-liquidation-table')"></div>
           <div class="inventory-table-wrap">
-            <table id="inv-liquidation-table" class="selectable-table">
+            <table id="inv-liquidation-table"class="selectable-table">
               <thead>
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('liquidation', this)"></th>
@@ -9569,11 +9631,13 @@
               </label>
               <button class="btn btn-green" onclick="addInventoryRow('clients')">+ Client</button>
               <button class="btn btn-outline btn-red" onclick="deleteInventoryRows('clients')">Delete Selected</button>
+              <button class="btn btn-outline" onclick="exportInventoryCsv('clients')">Export CSV</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('clients')">Save</button>
             </div>
           </div>
+          <div class="inv-search-wrap"><input class="inv-search-input" type="search" placeholder="Search…" oninput="filterInventoryTable(this, 'inv-clients-table')"></div>
           <div class="inventory-table-wrap">
-            <table id="inv-clients-table" class="selectable-table">
+            <table id="inv-clients-table"class="selectable-table">
               <thead>
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('clients', this)"></th>
@@ -9633,11 +9697,13 @@
               </label>
               <button class="btn btn-green" onclick="addInventoryRow('refill')">+ Row</button>
               <button class="btn btn-outline btn-red" onclick="deleteInventoryRows('refill')">Delete Selected</button>
+              <button class="btn btn-outline" onclick="exportInventoryCsv('refill')">Export CSV</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('refill')">Save</button>
             </div>
           </div>
+          <div class="inv-search-wrap"><input class="inv-search-input" type="search" placeholder="Search…" oninput="filterInventoryTable(this, 'inv-refill-table')"></div>
           <div class="inventory-table-wrap">
-            <table id="inv-refill-table" class="selectable-table">
+            <table id="inv-refill-table"class="selectable-table">
               <thead>
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('refill', this)"></th>
@@ -9671,11 +9737,13 @@
                 <input type="checkbox" onchange="toggleInventoryEdit('approvals', this.checked)"> Edit
               </label>
               <button class="btn btn-outline" onclick="refreshInventoryApprovals()">Refresh</button>
+              <button class="btn btn-outline" onclick="exportInventoryCsv('approvals')">Export CSV</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('approvals')">Save</button>
             </div>
           </div>
+          <div class="inv-search-wrap"><input class="inv-search-input" type="search" placeholder="Search…" oninput="filterInventoryTable(this, 'inv-approvals-table')"></div>
           <div class="inventory-table-wrap">
-            <table id="inv-approvals-table" class="selectable-table">
+            <table id="inv-approvals-table"class="selectable-table">
               <thead>
                 <tr>
                   <th>Request ID</th>
@@ -11714,7 +11782,8 @@ function normalizeInventoryRow(type, row) {
             qty: parseInventoryFloat(row.qty),
             costPerUnit: parseInventoryFloat(row.costPerUnit),
             date: parseInventoryDateTime(row.date),
-            deliveryDate: parseInventoryDateTime(row.deliveryDate)
+            deliveryDate: parseInventoryDateTime(row.deliveryDate),
+            reorderLevel: row.reorderLevel != null ? parseInventoryFloat(row.reorderLevel) : null
         };
     }
     if (type === 'built') {
@@ -11927,6 +11996,7 @@ function renderInventoryAll() {
     renderInventoryClients();
     renderInventoryRefillBatch();
     refreshInventoryApprovals();
+    updateInventoryKpiStrip();
 }
 
 function setInventoryDirty(isDirty) {
@@ -12114,7 +12184,8 @@ function addInventoryRow(type) {
         inventoryState.parts.push({
             id, category: '', itemClass: '', item: '', unit: 'unit', qty: 0,
             costPerUnit: 0, movement: 'Inbound', date: nowDateTime,
-            deliveryDate: '', poNumber: '', confirmedBy: '', issuedTo: '', requestId: ''
+            deliveryDate: '', poNumber: '', confirmedBy: '', issuedTo: '', requestId: '',
+            reorderLevel: null
         });
     } else if (type === 'built') {
         inventoryState.built.push({
@@ -12540,17 +12611,17 @@ function renderInventoryConstitution() {
     const totalEl = document.getElementById('inv-constitution-total');
     if (totalEl) totalEl.textContent = total.toFixed(2);
     applyInventoryEditState('constitution');
+    reapplyInventorySearch('inv-constitution-table');
 }
 
 function renderInventoryParts() {
     const tbody = document.getElementById('inv-parts-body');
     if (!tbody) return;
     tbody.innerHTML = '';
+    computeInventoryStock();
+    const constitutionOpts = getInventoryConstitutionOptions();
     inventoryState.parts.forEach(row => {
         const safeId       = escapeHtml(row.id);
-        const safeCat      = escapeHtml(row.category || '');
-        const safeCls      = escapeHtml(row.itemClass || '');
-        const safeItem     = escapeHtml(row.item || '');
         const safeUnit     = escapeHtml(row.unit || '');
         const safeQty      = escapeHtml(row.qty ?? '');
         const safeCPU      = escapeHtml(row.costPerUnit ?? '');
@@ -12560,14 +12631,44 @@ function renderInventoryParts() {
         const safeConfBy   = escapeHtml(row.confirmedBy || '');
         const safeIssuedTo = escapeHtml(row.issuedTo || '');
         const safeReqId    = escapeHtml(row.requestId || '-');
+        const safeReorder  = escapeHtml(String(row.reorderLevel ?? ''));
+        const currentStock = inventoryState.stock[row.item] ?? null;
+        const reorderNum   = Number(row.reorderLevel);
+        const isLowStock   = row.reorderLevel != null && currentStock !== null && !isNaN(reorderNum) && currentStock <= reorderNum;
+        const catOpts      = constitutionOpts.categories.length
+            ? getInventoryDropdownOptions(constitutionOpts.categories, row.category)
+            : `<option value="${escapeHtml(row.category || '')}">${escapeHtml(row.category || '')}</option>`;
+        const clsOpts      = constitutionOpts.itemClasses.length
+            ? getInventoryDropdownOptions(constitutionOpts.itemClasses, row.itemClass)
+            : `<option value="${escapeHtml(row.itemClass || '')}">${escapeHtml(row.itemClass || '')}</option>`;
+        const itemOpts     = constitutionOpts.items.length
+            ? getInventoryDropdownOptions(constitutionOpts.items, row.item)
+            : `<option value="${escapeHtml(row.item || '')}">${escapeHtml(row.item || '')}</option>`;
         const tr = document.createElement('tr');
+        if (isLowStock) tr.classList.add('inv-parts-low-stock');
         tr.innerHTML = `
           <td><input type="checkbox" data-row-id="${safeId}" data-inv-type="parts" ${row._selected ? 'checked' : ''} onchange="updateInventoryCheckbox('parts','${safeId}','_selected',this.checked)"></td>
-          <td><input class="db-input" value="${safeCat}" oninput="updateInventoryFieldInline('parts','${safeId}','category',this.value)"></td>
-          <td><input class="db-input" value="${safeCls}" oninput="updateInventoryFieldInline('parts','${safeId}','itemClass',this.value)"></td>
-          <td><input class="db-input" value="${safeItem}" oninput="updateInventoryFieldInline('parts','${safeId}','item',this.value)"></td>
+          <td>
+            <select class="db-input" onchange="updateInventoryFieldInline('parts','${safeId}','category',this.value)">
+              <option value="">-- select --</option>
+              ${catOpts}
+            </select>
+          </td>
+          <td>
+            <select class="db-input" onchange="updateInventoryFieldInline('parts','${safeId}','itemClass',this.value)">
+              <option value="">-- select --</option>
+              ${clsOpts}
+            </select>
+          </td>
+          <td>
+            <select class="db-input" onchange="updateInventoryFieldInline('parts','${safeId}','item',this.value)">
+              <option value="">-- select --</option>
+              ${itemOpts}
+            </select>
+          </td>
           <td><input class="db-input" value="${safeUnit}" oninput="updateInventoryFieldInline('parts','${safeId}','unit',this.value)"></td>
           <td><input type="number" class="db-input" value="${safeQty}" oninput="updateInventoryFieldInline('parts','${safeId}','qty',this.value)"></td>
+          <td>${currentStock !== null ? currentStock : '—'}</td>
           <td><input type="number" class="db-input" value="${safeCPU}" oninput="updateInventoryFieldInline('parts','${safeId}','costPerUnit',this.value)"></td>
           <td>
             <select class="db-input" onchange="updateInventoryField('parts','${safeId}','movement',this.value)">
@@ -12592,10 +12693,13 @@ function renderInventoryParts() {
           <td><input class="db-input" value="${safeConfBy}" oninput="updateInventoryFieldInline('parts','${safeId}','confirmedBy',this.value)"></td>
           <td><input class="db-input" value="${safeIssuedTo}" oninput="updateInventoryFieldInline('parts','${safeId}','issuedTo',this.value)"></td>
           <td>${safeReqId}</td>
+          <td><input type="number" class="db-input" value="${safeReorder}" oninput="updateInventoryFieldInline('parts','${safeId}','reorderLevel',this.value)"></td>
         `;
         tbody.appendChild(tr);
     });
     applyInventoryEditState('parts');
+    updateInventoryLowStockChip();
+    reapplyInventorySearch('inv-parts-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-parts-table'));
 }
 
@@ -12649,6 +12753,7 @@ function renderInventoryBuilt() {
         tbody.appendChild(tr);
     });
     applyInventoryEditState('built');
+    reapplyInventorySearch('inv-built-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-built-table'));
 }
 
@@ -12740,6 +12845,7 @@ function renderInventoryLiquidation() {
         tbody.appendChild(tr);
     });
     applyInventoryEditState('liquidation');
+    reapplyInventorySearch('inv-liquidation-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-liquidation-table'));
 }
 
@@ -12776,6 +12882,7 @@ function renderInventoryClients() {
         tbody.appendChild(tr);
     });
     applyInventoryEditState('clients');
+    reapplyInventorySearch('inv-clients-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-clients-table'));
 }
 
@@ -12815,6 +12922,7 @@ function renderInventoryRefillBatch() {
         tbody.appendChild(tr);
     });
     applyInventoryEditState('refill');
+    reapplyInventorySearch('inv-refill-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-refill-table'));
 }
 
@@ -12908,7 +13016,176 @@ function refreshInventoryApprovals() {
     });
     applyInventoryEditState('approvals');
     updateInventoryApprovalBadge();
+    reapplyInventorySearch('inv-approvals-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-approvals-table'));
+}
+
+function csvEscape(val) {
+    const str = String(val ?? '');
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function exportInventoryCsv(type) {
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `inventory-${type}-${dateStr}.csv`;
+    let headers = [];
+    let rows = [];
+    const fd = formatInventoryDateTimeDisplay;
+    if (type === 'constitution') {
+        headers = ['Category','Item Class','Item','Unit','Units/Device','Cost/Unit','Version','Effective Date','Cost/Device'];
+        rows = inventoryState.constitution.map(r => [
+            r.category, r.itemClass, r.item, r.unit, r.unitsPerDevice, r.costPerUnit,
+            r.version, fd(r.effectiveDate), r.costPerDevice
+        ]);
+    } else if (type === 'parts') {
+        headers = ['Category','Item Class','Item','Unit','In-stock Qty','Cost/Unit','Movement Type','Date of Movement','Delivery Date','PO Number','Confirmed By','Issued To','Request ID','Reorder Level'];
+        rows = inventoryState.parts.map(r => [
+            r.category, r.itemClass, r.item, r.unit, r.qty, r.costPerUnit,
+            r.movement, fd(r.date), fd(r.deliveryDate), r.poNumber,
+            r.confirmedBy, r.issuedTo, r.requestId, r.reorderLevel
+        ]);
+    } else if (type === 'built') {
+        headers = ['Serial','Device ID','Count','Date of Manufacture','Date of Sale','Sold/Issued To','Movement','Confirmed','Request ID'];
+        rows = inventoryState.built.map(r => [
+            r.serial, r.deviceId, r.count, fd(r.mfgDate), fd(r.saleDate),
+            r.soldTo, r.movement, r.confirmed ? 'Yes' : 'No', r.requestId
+        ]);
+    } else if (type === 'liquidation') {
+        headers = ['Request ID','Item','Issue/Sale','Issued/Sold To','Units Before','Units After','Units Issued','Date Issued','Acknowledged','Status'];
+        rows = inventoryState.liquidation.map(r => [
+            r.requestId, r.item, r.action, r.issuedTo, r.unitsBefore,
+            r.unitsAfter, r.unitsIssued, fd(r.date),
+            r.acknowledged ? 'Yes' : 'No', r.status
+        ]);
+    } else if (type === 'clients') {
+        headers = ['Client Type','Client Name','Client Address','Client Contact','Client Email','Item','GSTIN'];
+        rows = inventoryState.clients.map(r => [
+            r.clientType, r.clientName, r.clientAddress, r.clientContact,
+            r.clientEmail, r.item, r.gstin
+        ]);
+    } else if (type === 'refill') {
+        headers = ['Refill Box ID','Lot Size','Refill Lot ID','Manufacturer Name','Manufacture Date','Expiry Date','Delivery Date','PO Number','Notes'];
+        rows = inventoryState.refill.map(r => [
+            r.refillId, r.lotSize, r.refillLotId, r.manufacturerName,
+            fd(r.manufactureDate), fd(r.expiryDate), fd(r.deliveryDate), r.poNumber, r.notes
+        ]);
+    } else if (type === 'approvals') {
+        headers = ['Request ID','Requested By','TAT (days)','Due Date','Status','Approver'];
+        rows = inventoryState.approvals.map(r => [
+            r.requestId, r.requestedBy, r.tatDays, fd(r.dueDate), r.status, r.approver
+        ]);
+    } else {
+        return;
+    }
+    const csvLines = [headers.map(csvEscape).join(',')];
+    rows.forEach(row => csvLines.push(row.map(csvEscape).join(',')));
+    const csvContent = csvLines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function filterInventoryTable(inputEl, tableId) {
+    const search = (inputEl.value || '').toLowerCase().trim();
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach(tr => {
+        if (!search) { tr.style.display = ''; return; }
+        const cells = tr.querySelectorAll('td');
+        let match = false;
+        cells.forEach(td => {
+            const inp = td.querySelector('input[type="text"], input[type="number"], input:not([type]), select');
+            const text = inp ? (inp.value || inp.textContent || '') : td.textContent;
+            if (text.toLowerCase().includes(search)) match = true;
+        });
+        tr.style.display = match ? '' : 'none';
+    });
+}
+
+function reapplyInventorySearch(tableId) {
+    const tableWrap = document.getElementById(tableId);
+    if (!tableWrap) return;
+    const panel = tableWrap.closest('.inventory-panel, .tab-content');
+    if (!panel) return;
+    const input = panel.querySelector(`.inv-search-input[oninput*="${tableId}"]`);
+    if (!input || !input.value) return;
+    filterInventoryTable(input, tableId);
+}
+
+function getInventoryConstitutionOptions() {
+    return {
+        categories: [...new Set((inventoryState.constitution || []).map(r => r.category).filter(Boolean))],
+        itemClasses: [...new Set((inventoryState.constitution || []).map(r => r.itemClass).filter(Boolean))],
+        items: [...new Set((inventoryState.constitution || []).map(r => r.item).filter(Boolean))]
+    };
+}
+
+function getInventoryDropdownOptions(values, selected) {
+    const selectedStr = String(selected || '');
+    const allValues = new Set(values.map(String));
+    if (selectedStr && !allValues.has(selectedStr)) allValues.add(selectedStr);
+    return Array.from(allValues).sort((a, b) => a.localeCompare(b)).map(v => {
+        const sel = v === selectedStr ? 'selected' : '';
+        return `<option value="${escapeHtml(v)}" ${sel}>${escapeHtml(v)}</option>`;
+    }).join('');
+}
+
+function updateInventoryLowStockChip() {
+    computeInventoryStock();
+    const chip = document.getElementById('inv-low-stock-chip');
+    const countEl = document.getElementById('inv-low-stock-count');
+    if (!chip || !countEl) return;
+    const seenItems = new Set();
+    let lowCount = 0;
+    inventoryState.parts.forEach(row => {
+        if (!row.item || seenItems.has(row.item)) return;
+        seenItems.add(row.item);
+        const stock = inventoryState.stock[row.item] ?? 0;
+        const reorder = Number(row.reorderLevel);
+        if (!isNaN(reorder) && row.reorderLevel != null && stock <= reorder) lowCount++;
+    });
+    countEl.textContent = lowCount;
+    chip.style.display = lowCount > 0 ? '' : 'none';
+}
+
+function updateInventoryKpiStrip() {
+    const partsTypesEl = document.getElementById('inv-kpi-parts-types');
+    const pendingEl    = document.getElementById('inv-kpi-pending');
+    const lowStockEl   = document.getElementById('inv-kpi-low-stock');
+    const openLiqEl    = document.getElementById('inv-kpi-open-liq');
+    if (partsTypesEl) {
+        partsTypesEl.textContent = new Set(inventoryState.parts.map(r => r.item).filter(Boolean)).size;
+    }
+    if (pendingEl) {
+        pendingEl.textContent = inventoryState.approvals.filter(r => r.status === 'Pending').length;
+    }
+    if (lowStockEl) {
+        computeInventoryStock();
+        const seenItems = new Set();
+        let lowCount = 0;
+        inventoryState.parts.forEach(row => {
+            if (!row.item || seenItems.has(row.item)) return;
+            seenItems.add(row.item);
+            const stock = inventoryState.stock[row.item] ?? 0;
+            const reorder = Number(row.reorderLevel);
+            if (!isNaN(reorder) && row.reorderLevel != null && stock <= reorder) lowCount++;
+        });
+        lowStockEl.textContent = lowCount;
+        lowStockEl.style.color = lowCount > 0 ? '#dc2626' : '';
+    }
+    if (openLiqEl) {
+        openLiqEl.textContent = inventoryState.liquidation.filter(r => r.status === 'Pending').length;
+    }
 }
 
 function approveInventoryRequest(requestId, status) {
