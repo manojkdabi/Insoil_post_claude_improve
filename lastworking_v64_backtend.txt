@@ -9741,3 +9741,14 @@ function diagnoseSoilTestResults_() {
   
   Logger.log('=== Diagnostic Complete ===');
 }
+function srvr_saveInventoryEvidence(requestId, fileName, base64Data) {
+  try {
+    const driveUrl = uploadToDrive(base64Data, fileName, requestId);
+    if (!driveUrl || typeof driveUrl !== 'string') {
+      return { ok: false, error: 'Failed to upload inventory evidence: uploadToDrive returned no URL' };
+    }
+    return { ok: true, url: driveUrl };
+  } catch (e) {
+    return { ok: false, error: 'Failed to upload inventory evidence: ' + e.message };
+  }
+}

@@ -3348,6 +3348,57 @@
       margin-left: 8px;
     }
 
+    #mod-inventory .inv-evidence-link { color: #2563eb; text-decoration: underline; font-size: 0.82rem; }
+    #mod-inventory .inv-evidence-upload-btn { padding: 2px 8px; font-size: 0.78rem; }
+
+    #mod-inventory .inv-th-sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    #mod-inventory .inv-th-sortable:hover {
+      background: rgba(99,102,241,0.08);
+    }
+    #mod-inventory .inv-sort-indicator {
+      font-size: 0.7em;
+      color: #6366f1;
+      margin-left: 2px;
+    }
+
+    #mod-inventory .inv-liq-negative td { background: #fee2e2; }
+    #mod-inventory .inv-neg-badge { color: #dc2626; font-size: 0.72rem; font-weight: 700; margin-left: 4px; }
+    #mod-inventory .inv-neg-stock-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: #fee2e2;
+      color: #dc2626;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-left: 8px;
+    }
+
+    #mod-inventory .inv-chart-panel {
+      margin-top: 12px;
+      padding: 12px 16px;
+      background: #f8fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+    }
+    #mod-inventory .inv-chart-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    #mod-inventory .inv-chart-panel-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+
     /* Chart Containers */
     .chart-box {
       background: var(--bg-surface);
@@ -9449,12 +9500,12 @@
               <thead>
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('constitution', this)"></th>
-                  <th>Category</th>
-                  <th>Item Class</th>
-                  <th>Item</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('constitution','category')">Category</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('constitution','itemClass')">Item Class</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('constitution','item')">Item</th>
                   <th>Unit</th>
-                  <th>Units/Device</th>
-                  <th>Cost (Rs)/Unit</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('constitution','unitsPerDevice')">Units/Device</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('constitution','costPerUnit')">Cost (Rs)/Unit</th>
                   <th>Version</th>
                   <th>Effective Date</th>
                   <th>Cost/Device</th>
@@ -9496,6 +9547,7 @@
               <button class="btn btn-green" onclick="addInventoryRow('parts')">+ Row</button>
               <button class="btn btn-outline" onclick="triggerInventoryCsv('parts')">Import CSV</button>
               <button class="btn btn-outline" onclick="exportInventoryCsv('parts')">Export CSV</button>
+              <button class="btn btn-outline" onclick="toggleInventoryChart()" id="inv-chart-toggle-btn">📊 Chart</button>
               <button class="btn btn-outline btn-red" onclick="deleteInventoryRows('parts')">Delete Selected</button>
               <button class="btn btn-blue btn-sm" onclick="saveInventoryTable('parts')">Save</button>
               <input id="inv-parts-csv" type="file" accept=".csv,text/csv" style="display:none" onchange="importInventoryCsv('parts', this)">
@@ -9507,15 +9559,15 @@
               <thead>
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('parts', this)"></th>
-                  <th>Category</th>
-                  <th>Item Class</th>
-                  <th>Item</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('parts','category')">Category</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('parts','itemClass')">Item Class</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('parts','item')">Item</th>
                   <th>Unit</th>
-                  <th>In-stock Qty</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('parts','qty')">In-stock Qty</th>
                   <th>Computed Stock</th>
                   <th>Cost (Rs)/Unit</th>
-                  <th>Movement Type</th>
-                  <th>Date of Movement</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('parts','movement')">Movement Type</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('parts','date')">Date of Movement</th>
                   <th>Delivery Date</th>
                   <th>PO number</th>
                   <th>Confirmed by</th>
@@ -9526,6 +9578,13 @@
               </thead>
               <tbody id="inv-parts-body"></tbody>
             </table>
+          </div>
+          <div id="inv-parts-chart-panel" class="inv-chart-panel" style="display:none;">
+            <div class="inv-chart-panel-header">
+              <span class="inv-chart-panel-title">📊 Parts Movement History</span>
+              <button class="btn btn-sm btn-outline" onclick="toggleInventoryChart()" id="inv-chart-close-btn">✕ Close</button>
+            </div>
+            <canvas id="inv-parts-chart" height="180"></canvas>
           </div>
         </div>
 
@@ -9554,10 +9613,10 @@
                   <th>Serial</th>
                   <th>Device ID</th>
                   <th>Count</th>
-                  <th>Date of Manufacture</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('built','mfgDate')">Date of Manufacture</th>
                   <th>Date of Sale</th>
                   <th>Sold/Issued To</th>
-                  <th>Movement</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('built','movement')">Movement</th>
                   <th>Confirmed</th>
                   <th>Request ID</th>
                 </tr>
@@ -9582,7 +9641,7 @@
         <div id="inv-liquidation-requests" class="inventory-panel active">
           <div class="inventory-panel-header">
             <div>
-              <div class="inventory-panel-title">Liquidation</div>
+              <div class="inventory-panel-title">Liquidation <span id="inv-neg-stock-chip" class="inv-neg-stock-chip" style="display:none;">⚠ <span id="inv-neg-stock-count">0</span> negative</span></div>
               <div class="inventory-panel-subtitle">Stock changes only after approval and acknowledgment.</div>
             </div>
             <div class="inventory-actions">
@@ -9602,16 +9661,16 @@
                 <tr>
                   <th><input type="checkbox" onclick="toggleInventorySelectAll('liquidation', this)"></th>
                   <th>Request ID</th>
-                  <th>Item</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('liquidation','item')">Item</th>
                   <th>Issue/Sale</th>
                   <th>Issued/Sold To</th>
                   <th>Units Before</th>
                   <th>Units After</th>
                   <th>Units Issued</th>
-                  <th>Date Issued</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('liquidation','date')">Date Issued</th>
                   <th>Acknowledged</th>
                   <th>Evidence (PDF)</th>
-                  <th>Status</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('liquidation','status')">Status</th>
                 </tr>
               </thead>
               <tbody id="inv-liquidation-body"></tbody>
@@ -9711,8 +9770,8 @@
                   <th>Lot size</th>
                   <th>Refill lot ID</th>
                   <th>Manufacturer name</th>
-                  <th>Manufacture date</th>
-                  <th>Expiry Date</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('refill','manufactureDate')">Manufacture date</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('refill','expiryDate')">Expiry Date</th>
                   <th>Delivery Date</th>
                   <th>PO number</th>
                   <th>Notes</th>
@@ -9748,9 +9807,9 @@
                 <tr>
                   <th>Request ID</th>
                   <th>Requested By</th>
-                  <th>TAT (days)</th>
-                  <th>Due Date</th>
-                  <th>Status</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('approvals','tatDays')">TAT (days)</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('approvals','dueDate')">Due Date</th>
+                  <th class="inv-th-sortable" onclick="sortInventoryTable('approvals','status')">Status</th>
                   <th>Approver</th>
                   <th>Actions</th>
                 </tr>
@@ -11416,7 +11475,15 @@ const inventoryEditState = {
     clients: false,
     refill: false
 };
-
+const inventorySortState = {
+    constitution: { col: null, dir: 'asc' },
+    parts: { col: null, dir: 'asc' },
+    built: { col: null, dir: 'asc' },
+    liquidation: { col: null, dir: 'asc' },
+    clients: { col: null, dir: 'asc' },
+    approvals: { col: null, dir: 'asc' },
+    refill: { col: null, dir: 'asc' }
+};
 const inventoryTableIds = {
     constitution: 'inv-constitution-table',
     parts: 'inv-parts-table',
@@ -12362,6 +12429,7 @@ function updateInventoryConstitutionTotal() {
     }, 0);
     const totalEl = document.getElementById('inv-constitution-total');
     if (totalEl) totalEl.textContent = total.toFixed(2);
+    updateInventorySortHeaders('constitution');
     applyInventoryEditState('constitution');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-constitution-table'));
 }
@@ -12449,6 +12517,17 @@ function saveInventoryTable(type) {
     if (!result.valid) {
         showToast(`${result.title}: ${result.message}`, 'warning', 5000);
         return;
+    }
+    if (type === 'liquidation') {
+        computeInventoryStock();
+        const negItems = [];
+        inventoryState.liquidation.forEach(row => {
+            if (Number(row.unitsAfter || 0) < 0) negItems.push(row.item);
+        });
+        const uniqueNeg = [...new Set(negItems)];
+        if (uniqueNeg.length > 0) {
+            showToast(`⚠ Stock will go negative for: ${uniqueNeg.join(', ')}. Check quantities.`, 'warning', 8000);
+        }
     }
     saveInventoryData(type);
 }
@@ -12697,10 +12776,13 @@ function renderInventoryParts() {
         `;
         tbody.appendChild(tr);
     });
+    updateInventorySortHeaders('parts');
     applyInventoryEditState('parts');
     updateInventoryLowStockChip();
     reapplyInventorySearch('inv-parts-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-parts-table'));
+    const chartPanel = document.getElementById('inv-parts-chart-panel');
+    if (chartPanel && chartPanel.style.display !== 'none') renderInventoryPartsChart();
 }
 
 function renderInventoryBuilt() {
@@ -12752,6 +12834,7 @@ function renderInventoryBuilt() {
         `;
         tbody.appendChild(tr);
     });
+    updateInventorySortHeaders('built');
     applyInventoryEditState('built');
     reapplyInventorySearch('inv-built-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-built-table'));
@@ -12830,7 +12913,7 @@ function renderInventoryLiquidation() {
             </select>
           </td>
           <td>${Number(row.unitsBefore || 0)}</td>
-          <td data-liquidation-after="${row.id}">${Number(row.unitsAfter || 0)}</td>
+          <td data-liquidation-after="${row.id}">${Number(row.unitsAfter || 0)}${Number(row.unitsAfter || 0) < 0 ? ' <span class="inv-neg-badge">⚠ Negative</span>' : ''}</td>
           <td><input type="number" class="db-input" value="${row.unitsIssued ?? ''}" oninput="updateInventoryFieldInline('liquidation','${row.id}','unitsIssued',this.value)"></td>
           <td>
             <input class="db-input" type="text" value="${formatInventoryDateTimeDisplay(row.date) || ''}"
@@ -12839,11 +12922,16 @@ function renderInventoryLiquidation() {
               onblur="inventoryDateTimeBlur(this, 'liquidation', '${row.id}', 'date')">
           </td>
           <td><input type="checkbox" ${row.acknowledged ? 'checked' : ''} onchange="toggleInventoryAcknowledged('${row.id}', this.checked)"></td>
-          <td><input type="file" class="db-input" accept="application/pdf"></td>
+          <td>${row.evidence && String(row.evidence).startsWith('http') ? `<a href="${escapeHtml(row.evidence)}" target="_blank" class="inv-evidence-link">📄 View</a> <button class="btn btn-sm btn-outline inv-evidence-upload-btn" onclick="triggerInventoryEvidence('${escapeHtml(row.id)}', this)">↑ Replace</button><input type="file" id="inv-evidence-${escapeHtml(row.id)}" accept="application/pdf" style="display:none" onchange="uploadInventoryEvidence('${escapeHtml(row.id)}', this)">` : `<button class="btn btn-sm btn-outline inv-evidence-upload-btn" onclick="triggerInventoryEvidence('${escapeHtml(row.id)}', this)">↑ Upload PDF</button><input type="file" id="inv-evidence-${escapeHtml(row.id)}" accept="application/pdf" style="display:none" onchange="uploadInventoryEvidence('${escapeHtml(row.id)}', this)">`}</td>
           <td><span class="inventory-status ${statusClass}">${row.status || 'Pending'}</span></td>
         `;
+        if (Number(row.unitsAfter || 0) < 0) {
+            tr.classList.add('inv-liq-negative');
+        }
         tbody.appendChild(tr);
     });
+    updateInventoryNegativeStockChip();
+    updateInventorySortHeaders('liquidation');
     applyInventoryEditState('liquidation');
     reapplyInventorySearch('inv-liquidation-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-liquidation-table'));
@@ -12921,6 +13009,7 @@ function renderInventoryRefillBatch() {
         `;
         tbody.appendChild(tr);
     });
+    updateInventorySortHeaders('refill');
     applyInventoryEditState('refill');
     reapplyInventorySearch('inv-refill-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-refill-table'));
@@ -13014,6 +13103,7 @@ function refreshInventoryApprovals() {
         `;
         tbody.appendChild(tr);
     });
+    updateInventorySortHeaders('approvals');
     applyInventoryEditState('approvals');
     updateInventoryApprovalBadge();
     reapplyInventorySearch('inv-approvals-table');
@@ -13186,6 +13276,182 @@ function updateInventoryKpiStrip() {
     if (openLiqEl) {
         openLiqEl.textContent = inventoryState.liquidation.filter(r => r.status === 'Pending').length;
     }
+}
+
+function sortInventoryTable(type, col) {
+    const state = inventorySortState[type];
+    if (!state) return;
+    if (state.col === col) {
+        state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        state.col = col;
+        state.dir = 'asc';
+    }
+    const rows = inventoryState[type];
+    if (!rows) return;
+    rows.sort((a, b) => {
+        let av = a[col] ?? '';
+        let bv = b[col] ?? '';
+        const an = Number(av), bn = Number(bv);
+        if (!isNaN(an) && !isNaN(bn) && av !== '' && bv !== '') {
+            return state.dir === 'asc' ? an - bn : bn - an;
+        }
+        if (typeof av === 'string' && av.match(/^\d{4}-\d{2}-\d{2}/)) {
+            return state.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+        }
+        av = String(av).toLowerCase();
+        bv = String(bv).toLowerCase();
+        return state.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    renderInventoryAll();
+}
+
+function getInventorySortIndicator(type, col) {
+    const state = inventorySortState[type];
+    if (!state || state.col !== col) return '';
+    return state.dir === 'asc' ? ' ▲' : ' ▼';
+}
+
+function updateInventorySortHeaders(type) {
+    const tableId = inventoryTableIds[type];
+    if (!tableId) return;
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const state = inventorySortState[type];
+    table.querySelectorAll('thead th.inv-th-sortable').forEach(th => {
+        const onclickStr = th.getAttribute('onclick') || '';
+        const m = onclickStr.match(/'([^']+)'\s*\)$/);
+        if (!m) return;
+        const col = m[1];
+        const existing = th.querySelector('.inv-sort-indicator');
+        if (existing) existing.remove();
+        if (state && state.col === col) {
+            const span = document.createElement('span');
+            span.className = 'inv-sort-indicator';
+            span.textContent = state.dir === 'asc' ? ' ▲' : ' ▼';
+            th.appendChild(span);
+        }
+    });
+}
+
+function updateInventoryNegativeStockChip() {
+    const chip = document.getElementById('inv-neg-stock-chip');
+    const countEl = document.getElementById('inv-neg-stock-count');
+    if (!chip || !countEl) return;
+    computeInventoryStock();
+    const count = Object.values(inventoryState.stock).filter(v => v < 0).length;
+    countEl.textContent = count;
+    chip.style.display = count > 0 ? '' : 'none';
+}
+
+function triggerInventoryEvidence(rowId, btn) {
+    const input = document.getElementById('inv-evidence-' + rowId);
+    if (input) input.click();
+}
+
+function uploadInventoryEvidence(rowId, inputEl) {
+    if (typeof google === 'undefined' || !google.script?.run) {
+        showToast('Evidence upload only available in the Apps Script deployment.', 'warning');
+        return;
+    }
+    const file = inputEl.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        google.script.run
+            .withSuccessHandler(res => {
+                if (res?.ok) {
+                    const row = inventoryState.liquidation.find(r => r.id === rowId);
+                    if (row) row.evidence = res.url;
+                    setInventoryDirty(true);
+                    renderInventoryLiquidation();
+                    showToast('Evidence uploaded ✅', 'success');
+                } else {
+                    showToast('Upload failed: ' + (res?.error || 'unknown'), 'error', 6000);
+                }
+            })
+            .withFailureHandler(err => {
+                showToast('Upload failed: ' + err.message, 'error', 6000);
+            })
+            .srvr_saveInventoryEvidence(rowId, file.name, e.target.result);
+    };
+    reader.readAsDataURL(file);
+}
+
+let inventoryPartsChartInstance = null;
+
+function toggleInventoryChart() {
+    const panel = document.getElementById('inv-parts-chart-panel');
+    if (!panel) return;
+    const isHidden = panel.style.display === 'none' || panel.style.display === '';
+    panel.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) renderInventoryPartsChart();
+}
+
+function renderInventoryPartsChart() {
+    const canvas = document.getElementById('inv-parts-chart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (inventoryPartsChartInstance) {
+        inventoryPartsChartInstance.destroy();
+        inventoryPartsChartInstance = null;
+    }
+    const monthlyData = {};
+    inventoryState.parts.forEach(row => {
+        const dateStr = row.date ? String(row.date).slice(0, 7) : null;
+        if (!dateStr || !/^\d{4}-\d{2}$/.test(dateStr)) return;
+        if (!monthlyData[dateStr]) monthlyData[dateStr] = { inbound: 0, outbound: 0 };
+        const qty = Number(row.qty || 0);
+        if (row.movement === 'Inbound') {
+            monthlyData[dateStr].inbound += qty;
+        } else {
+            monthlyData[dateStr].outbound += qty;
+        }
+    });
+    const labels = Object.keys(monthlyData).sort();
+    const inboundData = labels.map(m => monthlyData[m].inbound);
+    const outboundData = labels.map(m => monthlyData[m].outbound);
+    if (labels.length === 0) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#64748b';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No parts movement data to display', canvas.width / 2, 90);
+        return;
+    }
+    inventoryPartsChartInstance = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Inbound',
+                    data: inboundData,
+                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                    borderColor: '#10b981',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Issue / Sale',
+                    data: outboundData,
+                    backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                    borderColor: '#ef4444',
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'top' },
+                title: { display: false }
+            },
+            scales: {
+                x: { stacked: false, title: { display: true, text: 'Month' } },
+                y: { stacked: false, title: { display: true, text: 'Units' }, beginAtZero: true }
+            }
+        }
+    });
 }
 
 function approveInventoryRequest(requestId, status) {
