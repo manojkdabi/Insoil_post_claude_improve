@@ -24855,9 +24855,34 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
 
     console.log(`[RGB Location] Saving location for ${deviceId}/${testId}: Place=${place}, GPS=${gps}, State=${state}`);
 
+    // Optimistic in-memory update — update window.rgbData immediately so the
+    // Raw RGB Data panel reflects the new values even before (or if) the backend
+    // call succeeds.  This prevents Place/GPS/State from disappearing when the
+    // user toggles between the Calculated Metrics and Raw RGB Data views.
+    (window.rgbData || []).forEach(function(r) {
+        const did = String(r.Device_ID ?? r.did ?? '');
+        const tid = String(r.Test_ID   ?? r.tid ?? '');
+        if (did === String(deviceId) && tid === String(testId)) {
+            r.Place = place; r.place = place;
+            r.GPS   = gps;   r.gps   = gps;
+            r.State = state; r.state = state;
+        }
+    });
+
     // Check if GAS client API is available
     if (!google || !google.script || !google.script.run) {
-        console.error('[RGB Location] google.script.run is not available — running outside GAS context?');
+        console.warn('[RGB Location] google.script.run not available — running outside GAS context, skipping backend save.');
+        return;
+    }
+
+    // Guard: if the backend function is not yet deployed the GAS proxy will not
+    // expose it as a callable property and calling it throws a TypeError.  Detect
+    // this early and show a clear actionable message instead of a raw crash.
+    if (typeof google.script.run.updateRGBLocationData_ !== 'function') {
+        console.error('[RGB Location] Backend function updateRGBLocationData_ not found. Please deploy backend_MN_v1 and reload.');
+        if (typeof showToast === 'function') {
+            showToast('⚠ Location saved locally. Please deploy backend_MN_v1 to persist.', 'warn', 8000);
+        }
         return;
     }
 
@@ -24865,27 +24890,17 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
         .withSuccessHandler(function(result) {
             if (result && result.success) {
                 console.log('[RGB Location] ✅ Location data saved successfully to %d sheet(s)', result.sheetsUpdated || 0);
-                // Gap 6: update in-memory rgbData so Raw RGB Data view reflects the new values immediately
-                (window.rgbData || []).forEach(function(r) {
-                    const did = String(r.Device_ID ?? r.did ?? '');
-                    const tid = String(r.Test_ID   ?? r.tid ?? '');
-                    if (did === String(deviceId) && tid === String(testId)) {
-                        r.Place = place; r.place = place;
-                        r.GPS   = gps;   r.gps   = gps;
-                        r.State = state; r.state = state;
-                    }
-                });
             } else {
                 console.error('[RGB Location] Failed to save:', result?.error);
                 if (typeof showToast === 'function') {
-                    showToast('Failed to save location data', 'error');
+                    showToast('Failed to save location data to sheet', 'error');
                 }
             }
         })
         .withFailureHandler(function(error) {
             console.error('[RGB Location] Error saving location data:', error);
             if (typeof showToast === 'function') {
-                showToast('Error: ' + (error.message || 'Failed to save'), 'error');
+                showToast('Error saving location: ' + (error.message || 'Unknown error'), 'error');
             }
         })
         .updateRGBLocationData_(deviceId, testId, place, gps, state);
