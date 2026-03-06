@@ -6762,14 +6762,20 @@
 
       <div class="form-group" style="margin-top:15px;">
         <label for="login-pass" style="font-weight:600; font-size:0.85rem;">Password</label>
-        <input type="password" id="login-pass" name="password" autocomplete="current-password"
-               placeholder="Enter Password"
-               aria-required="true"
-               aria-describedby="login-msg"
-               style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-top:5px;">
+        <div style="position:relative; margin-top:5px;">
+          <input type="password" id="login-pass" name="password" autocomplete="current-password"
+                 placeholder="Enter Password"
+                 aria-required="true"
+                 aria-describedby="login-msg"
+                 style="width:100%; padding:8px 36px 8px 8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+          <button type="button" id="login-pass-toggle"
+                  onclick="(function(){var i=document.getElementById('login-pass');var b=document.getElementById('login-pass-toggle');if(i.type==='password'){i.type='text';b.textContent='🙈';}else{i.type='password';b.textContent='👁';}})()"
+                  title="Show/hide password"
+                  style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;padding:0;line-height:1;" aria-label="Toggle password visibility">👁</button>
+        </div>
       </div>
 
-      <button type="submit" style="width:100%; margin-top:25px; background:#0078d4; color:white; padding:10px; border:none; border-radius:4px; font-weight:bold; cursor:pointer; min-height:44px;">LOGIN</button>
+      <button type="submit" id="login-submit-btn" style="width:100%; margin-top:25px; background:#0078d4; color:white; padding:10px; border:none; border-radius:4px; font-weight:bold; cursor:pointer; min-height:44px; transition:opacity 0.15s;">LOGIN</button>
       <div id="login-msg" role="alert" aria-live="assertive"
            style="margin-top:15px; color:#d13438; text-align:center; font-size:0.85rem; min-height:20px;">
       </div>
@@ -11007,13 +11013,35 @@ function attemptLogin() {
     const u = document.getElementById('login-user').value.trim();
     const p = document.getElementById('login-pass').value.trim();
     const msg = document.getElementById('login-msg');
-    
-    if(!u || !p) { msg.innerText = "Please fill all fields."; return; }
-    
-    msg.innerText = "Verifying...";
-    
+    const btn = document.getElementById('login-submit-btn');
+
+    // Clear any previous error styling
+    _loginSetMsgStyle_(msg, '');
+
+    if(!u || !p) { _loginSetMsg_(msg, "Please fill all fields.", 'error'); return; }
+
+    // Disable button + show spinner to prevent double-submit
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Verifying…';
+        btn.style.opacity = '0.7';
+        btn.style.cursor = 'not-allowed';
+    }
+    _loginSetMsg_(msg, "Verifying…", 'info');
+
+    const _restoreBtn = () => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'LOGIN';
+            btn.style.opacity = '';
+            btn.style.cursor = '';
+        }
+    };
+
     google.script.run.withSuccessHandler(res => {
+        _restoreBtn();
         if(res.success) {
+            _loginSetMsg_(msg, '', '');
             document.getElementById('login-overlay').style.display = 'none';
             currentUserRole = res.role;
             currentUser = res;
@@ -11031,11 +11059,26 @@ function attemptLogin() {
             if(res.role === 'Admin') refreshUserList();
 
         } else {
-            msg.innerText = res.msg || "Login Failed";
+            // Distinguish lockout (warning) from invalid credentials (error)
+            const isLockout = (res.msg || '').toLowerCase().includes('too many');
+            _loginSetMsg_(msg, res.msg || "Login Failed", isLockout ? 'warning' : 'error');
         }
     }).withFailureHandler(err => {
-        msg.innerText = "Connection Error";
+        _restoreBtn();
+        _loginSetMsg_(msg, "Connection error — please check your network and try again.", 'error');
     }).checkLogin(u, p);
+}
+
+/** Helper: set login message text with appropriate colour. type: 'error'|'warning'|'info'|'' */
+function _loginSetMsg_(el, text, type) {
+    if (!el) return;
+    el.textContent = text;
+    _loginSetMsgStyle_(el, type);
+}
+function _loginSetMsgStyle_(el, type) {
+    if (!el) return;
+    const colours = { error: '#d13438', warning: '#c9730a', info: '#005a9e', '': '#d13438' };
+    el.style.color = colours[type] || colours[''];
 }
 
 function applyPermissions(role, customModules) {
@@ -12826,12 +12869,21 @@ window.addEventListener('resize', () => {
 // Allow Enter key to login
 document.addEventListener('DOMContentLoaded', () => {
     const passInput = document.getElementById('login-pass');
+    const userInput = document.getElementById('login-user');
     updateUserCard(null);
     if(passInput) {
         passInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') attemptLogin();
         });
     }
+    // Clear login error message as soon as the user starts correcting their input
+    const _clearLoginMsg = () => {
+        const msg = document.getElementById('login-msg');
+        if (msg && msg.textContent) { msg.textContent = ''; }
+    };
+    if (userInput) userInput.addEventListener('input', _clearLoginMsg);
+    if (passInput) passInput.addEventListener('input', _clearLoginMsg);
+
     const storedSession = restoreLoginSession();
     if (storedSession) {
         applyLoginSession(storedSession);
