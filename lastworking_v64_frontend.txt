@@ -11648,6 +11648,7 @@ function inventoryActionCode(action) {
     const normalized = String(action || '').toLowerCase();
     if (normalized === 'issue') return 'ISS';
     if (normalized === 'sale') return 'SAL';
+    if (normalized === 'return') return 'RET';
     if (normalized === 'transfer') return 'TRA';
     return String(action || '').slice(0, 3).toUpperCase() || 'REQ';
 }
@@ -11975,6 +11976,16 @@ function importInventoryCsv(type, input) {
 
         setInventoryDirty(true);
         renderInventoryAll();
+
+        if (type === 'parts') {
+            const orphaned = inventoryState.parts.filter(r =>
+                (r.movement === 'Issue' || r.movement === 'Sale') &&
+                !inventoryState.liquidation.some(l => l.requestId === r.requestId)
+            );
+            if (orphaned.length) {
+                showToast(`⚠ ${orphaned.length} imported Part(s) have Issue/Sale movement but no liquidation request — stock deduction will not occur until a request is created via the Liquidation tab.`, 'warning', 9000);
+            }
+        }
     };
     reader.readAsText(file);
 }
@@ -12528,6 +12539,15 @@ function saveInventoryTable(type) {
         showToast(`${result.title}: ${result.message}`, 'warning', 5000);
         return;
     }
+    if (type === 'parts') {
+        const orphaned = inventoryState.parts.filter(r =>
+            (r.movement === 'Issue' || r.movement === 'Sale') &&
+            !inventoryState.liquidation.some(l => l.requestId === r.requestId)
+        );
+        if (orphaned.length) {
+            showToast(`⚠ ${orphaned.length} Part row(s) have Issue/Sale movement with no linked liquidation request — their stock deduction is not tracked.`, 'warning', 9000);
+        }
+    }
     if (type === 'liquidation') {
         computeInventoryStock();
         const negItems = [];
@@ -12897,13 +12917,23 @@ function computeInventoryStock() {
         }
     });
 
-    inventoryState.liquidation.forEach(row => {
+    const sortedLiquidation = [...inventoryState.liquidation].sort((a, b) => {
+        const da = parseInventoryDateTime(a.date) || a.date || '';
+        const db = parseInventoryDateTime(b.date) || b.date || '';
+        return String(da).localeCompare(String(db));
+    });
+    sortedLiquidation.forEach(row => {
         const before = stock[row.item] || 0;
         row.unitsBefore = before;
         if (row.status === 'Approved' && row.acknowledged) {
-            const issued = Number(row.unitsIssued || 0);
-            row.unitsAfter = before - issued;
-            stock[row.item] = row.unitsAfter;
+            const qty = Number(row.unitsIssued || 0);
+            if (row.action === 'Return') {
+                row.unitsAfter = before + qty;
+                stock[row.item] = row.unitsAfter;
+            } else {
+                row.unitsAfter = before - qty;
+                stock[row.item] = row.unitsAfter;
+            }
         } else {
             row.unitsAfter = before;
         }
@@ -12935,6 +12965,7 @@ function renderInventoryLiquidation() {
               <option value="Issue" ${row.action === 'Issue' ? 'selected' : ''}>Issue</option>
               <option value="Sale" ${row.action === 'Sale' ? 'selected' : ''}>Sale</option>
               <option value="Transfer" ${row.action === 'Transfer' ? 'selected' : ''}>Transfer</option>
+              <option value="Return" ${row.action === 'Return' ? 'selected' : ''}>Return (add back)</option>
             </select>
           </td>
           <td>
