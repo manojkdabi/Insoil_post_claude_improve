@@ -2621,6 +2621,39 @@
       line-height: 1;
     }
 
+    /* R3 — sortable RGB/QAQC column headers */
+    .rgb-th-sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .rgb-th-sortable:hover {
+      background: rgba(99,102,241,0.08);
+    }
+
+    /* R9 — selection count chip */
+    #rgb-sel-count, #qaqc-sel-count {
+      display: none;
+      font-size: 11px;
+      color: #4f46e5;
+      font-weight: 600;
+      background: #eef2ff;
+      padding: 2px 8px;
+      border-radius: 12px;
+      vertical-align: middle;
+    }
+
+    /* R8 — rows-per-page selector */
+    .rgb-per-page-select {
+      font-size: 11px;
+      padding: 2px 4px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: #fff;
+      color: #374151;
+      cursor: pointer;
+    }
+
     #mod-results .results-panel {
       flex: 1 1 auto;
       display: flex;
@@ -7305,17 +7338,22 @@
             <button class="btn btn-slate" onclick="exportExcel('rgb')">Export Excel</button>
             <button class="btn btn-slate" onclick="exportRgbCsv()">Export CSV</button>
             <button class="btn btn-red" onclick="resetData()">Reset</button>
-
             <div class="divider-v"></div>
-
             <button class="btn btn-outline" onclick="refreshRgbCalculatedMetrics()">Refresh Metrics</button>
             <button id="btn-rgb-move" class="btn btn-indigo" onclick="moveDataToQC()">Move to QC ➔ <span id="rgb-move-count"></span></button>
+            <span id="rgb-sel-count"></span>
           </div>
 
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
             <button class="btn btn-outline" onclick="changePage('rgb', -1)">❮</button>
             <span id="pg-rgb-txt">Loading...</span>
             <button class="btn btn-outline" onclick="changePage('rgb', 1)">❯</button>
+            <select id="rgb-per-page" class="rgb-per-page-select" title="Rows per page" onchange="setRgbRowsPerPage(this.value)">
+              <option value="25">25/pg</option>
+              <option value="50" selected>50/pg</option>
+              <option value="100">100/pg</option>
+              <option value="200">200/pg</option>
+            </select>
 
             <input type="date" id="date-rgb-from" class="date-input" onchange="renderTable('rgb')">
             <input type="date" id="date-rgb-to" class="date-input" onchange="renderTable('rgb')">
@@ -7400,6 +7438,7 @@
               <button id="btn-qaqc-move" class="btn btn-indigo" onclick="moveDataToRGB()">
                 Move to RGB/Abs <span id="qaqc-move-count"></span>
               </button>
+              <span id="qaqc-sel-count"></span>
               <label class="qaqc-toggle">
                 <span class="qaqc-toggle-label">Quarantine</span>
                 <input id="qaqc-raw-toggle" type="checkbox" onchange="setQaqcRawView(this.checked)">
@@ -14385,6 +14424,16 @@ function updateRgbActionButtons() {
   }
   const btn = document.getElementById('btn-rgb-move');
   if (btn) btn.disabled = false;
+  // R9 — selection count chip
+  const selCount = document.getElementById('rgb-sel-count');
+  if (selCount) {
+    if (n > 0) {
+      selCount.textContent = n + ' selected';
+      selCount.style.display = 'inline-block';
+    } else {
+      selCount.style.display = 'none';
+    }
+  }
 }
 
 function updateQaqcActionButtons() {
@@ -14394,6 +14443,68 @@ function updateQaqcActionButtons() {
     badge.textContent = n > 0 ? String(n) : '';
     badge.style.display = n > 0 ? 'inline-flex' : 'none';
   }
+  // R9 — selection count chip for QAQC
+  const selCount = document.getElementById('qaqc-sel-count');
+  if (selCount) {
+    if (n > 0) {
+      selCount.textContent = n + ' selected';
+      selCount.style.display = 'inline-block';
+    } else {
+      selCount.style.display = 'none';
+    }
+  }
+}
+
+// R2 — select / deselect all visible rows on current page
+function toggleRgbSelectAll(cb, tab) {
+  const modKey = (tab === 'rgb') ? 'rgb' : 'qaqc';
+  window.checkedRows = window.checkedRows || { rgb: [], qaqc: [] };
+  window.checkedRows[modKey] = Array.isArray(window.checkedRows[modKey]) ? window.checkedRows[modKey] : [];
+  const arr = window.checkedRows[modKey];
+  const tableId = (tab === 'rgb') ? 'tbl-rgb-metrics' : 'tbl-qaqc-metrics';
+  const rowCbs = document.querySelectorAll('#' + tableId + ' tbody input[type="checkbox"]');
+  rowCbs.forEach(function(rowCb) {
+    const tr = rowCb.closest('tr');
+    const id = String(tr ? (tr.dataset.id || '') : '');
+    if (!id) return;
+    const idx = arr.indexOf(id);
+    if (cb.checked) {
+      if (idx === -1) arr.push(id);
+      rowCb.checked = true;
+    } else {
+      if (idx !== -1) arr.splice(idx, 1);
+      rowCb.checked = false;
+    }
+    // enable/disable QAQC batch dropdowns
+    if (modKey === 'qaqc') {
+      try {
+        const sel = document.querySelector('.qc-batch-select-cell[data-id="' + CSS.escape(id) + '"]');
+        if (sel) sel.disabled = !cb.checked;
+      } catch (e) {}
+    }
+  });
+  if (typeof updateRgbActionButtons === 'function') updateRgbActionButtons();
+  if (typeof updateQaqcActionButtons === 'function') updateQaqcActionButtons();
+}
+
+// R3 — sort RGB/QAQC table by column
+function sortRgbTable(tab, col) {
+  const stateKey = (tab === 'rgb') ? 'rgbSortState' : 'qaqcSortState';
+  const ss = window[stateKey] = window[stateKey] || { col: null, asc: true };
+  if (ss.col === col) {
+    ss.asc = !ss.asc;
+  } else {
+    ss.col = col;
+    ss.asc = true;
+  }
+  if (typeof renderTable === 'function') renderTable(tab);
+}
+
+// R8 — change rows per page for RGB table
+function setRgbRowsPerPage(n) {
+  window.rgbRowsPerPage = parseInt(n, 10) || 50;
+  if (window.pageState) window.pageState['rgb'] = 1;
+  if (typeof renderTable === 'function') renderTable('rgb');
 }
 
 function updateRgbMissingChip() {
@@ -16456,9 +16567,38 @@ function renderTable(tab) {
   });
 
   // -------------------------------
+  // SORT (R3)
+  // -------------------------------
+  const sortState = isRGB ? (window.rgbSortState = window.rgbSortState || { col: null, asc: true })
+                          : (window.qaqcSortState = window.qaqcSortState || { col: null, asc: true });
+  if (sortState.col) {
+    const col = sortState.col;
+    const asc = sortState.asc;
+    filtered = filtered.slice().sort(function(a, b) {
+      let va = '', vb = '';
+      if (col === 'Test_date')      { va = normStr(a.Test_date ?? a.time ?? ''); vb = normStr(b.Test_date ?? b.time ?? ''); }
+      else if (col === 'Device_ID') { va = normStr(a.Device_ID ?? a.did ?? ''); vb = normStr(b.Device_ID ?? b.did ?? ''); }
+      else if (col === 'Test_ID')   { va = normStr(a.Test_ID ?? a.tid ?? '');   vb = normStr(b.Test_ID ?? b.tid ?? ''); }
+      else if (col === 'Client_ID') { va = normStr(a.Client_ID ?? '');          vb = normStr(b.Client_ID ?? ''); }
+      else if (col === 'Farm_ID')   { va = normStr(a.Farm_ID ?? '');            vb = normStr(b.Farm_ID ?? ''); }
+      else if (col === 'ProdBatch_ID') { va = normStr(a.ProdBatch_ID ?? '');    vb = normStr(b.ProdBatch_ID ?? ''); }
+      else if (col === 'QCBatch_ID')   { va = normStr(a.QCBatch_ID ?? '');      vb = normStr(b.QCBatch_ID ?? ''); }
+      else if (col === 'Place')     { va = normStr(a.Place ?? '');              vb = normStr(b.Place ?? ''); }
+      else if (col === 'State')     { va = normStr(a.State ?? a.state ?? '');   vb = normStr(b.State ?? b.state ?? ''); }
+      else if (col === 'Crop')      { va = normStr(a.crop ?? a.Crop ?? '');     vb = normStr(b.crop ?? b.Crop ?? ''); }
+      else { va = String(getMetricVal(a, col) ?? ''); vb = String(getMetricVal(b, col) ?? ''); }
+      const na = parseFloat(va), nb = parseFloat(vb);
+      if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+      return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+  }
+
+  // -------------------------------
   // PAGINATION
   // -------------------------------
-  const perPage = (typeof ROWS_PER_PAGE === "number" && ROWS_PER_PAGE > 0) ? ROWS_PER_PAGE : 50;
+  const perPage = isRGB
+    ? (parseInt(window.rgbRowsPerPage, 10) || (typeof ROWS_PER_PAGE === "number" && ROWS_PER_PAGE > 0 ? ROWS_PER_PAGE : 50))
+    : (typeof ROWS_PER_PAGE === "number" && ROWS_PER_PAGE > 0 ? ROWS_PER_PAGE : 50);
   const totalRows = filtered.length;
   const maxPage = Math.ceil(totalRows / perPage) || 1;
   if (pageState[tab] > maxPage) pageState[tab] = maxPage;
@@ -16475,22 +16615,29 @@ function renderTable(tab) {
   // -------------------------------
   // HEADER (MUST MATCH BODY COUNT)
   // -------------------------------
+  const si = (col) => {
+    if (sortState.col !== col) return '';
+    return sortState.asc ? ' ▲' : ' ▼';
+  };
+  const sh = (col, label) =>
+    `<th class="rgb-th-sortable" onclick="sortRgbTable('${tab}','${col}')" title="Sort by ${label}">${label}${si(col)}</th>`;
+
   const metricHeads = (Array.isArray(METRIC_COLS_FLAT) ? METRIC_COLS_FLAT : [])
-    .map(c => `<th>${c.label}</th>`).join("");
+    .map(c => sh(c.k, c.label)).join("");
 
   thead.innerHTML = `<tr>
-    <th>QC</th>
-    <th>Client_ID</th>
-    <th>Farm_ID</th>
-    <th>ProdBatch_ID</th>
-    <th>QCBatch_ID</th>
-    <th>Device_ID</th>
-    <th>Test_ID</th>
-    <th>Crop</th>
-    <th>Test_date</th>
-    <th>Place</th>
+    <th><input type="checkbox" id="${tab}-select-all-cb" title="Select / deselect all on this page" onclick="toggleRgbSelectAll(this,'${tab}')"></th>
+    ${sh('Client_ID', 'Client_ID')}
+    ${sh('Farm_ID', 'Farm_ID')}
+    ${sh('ProdBatch_ID', 'ProdBatch_ID')}
+    ${sh('QCBatch_ID', 'QCBatch_ID')}
+    ${sh('Device_ID', 'Device_ID')}
+    ${sh('Test_ID', 'Test_ID')}
+    ${sh('Crop', 'Crop')}
+    ${sh('Test_date', 'Test_date')}
+    ${sh('Place', 'Place')}
     <th>GPS</th>
-    <th>State</th>
+    ${sh('State', 'State')}
     ${metricHeads}
   </tr>`;
 
@@ -16704,6 +16851,18 @@ function renderTable(tab) {
   if (isRGB && typeof initAllRGBLocationAutocomplete === 'function') {
     // Use setTimeout to ensure DOM is ready
     setTimeout(() => initAllRGBLocationAutocomplete(), 100);
+  }
+
+  // R2 — update select-all checkbox indeterminate state
+  const selectAllCb = document.getElementById(tab + '-select-all-cb');
+  if (selectAllCb && pageData.length > 0) {
+    const allChecked = pageData.every(function(r) { return selectedSet.has(String(r.id)); });
+    const someChecked = pageData.some(function(r) { return selectedSet.has(String(r.id)); });
+    selectAllCb.checked = allChecked;
+    selectAllCb.indeterminate = !allChecked && someChecked;
+  } else if (selectAllCb) {
+    selectAllCb.checked = false;
+    selectAllCb.indeterminate = false;
   }
 }
 
