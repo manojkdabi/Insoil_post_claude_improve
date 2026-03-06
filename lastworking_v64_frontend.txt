@@ -11655,10 +11655,10 @@ function inventoryActionCode(action) {
 
 function formatInventoryRequestId(action, createdAt) {
     const iso = parseInventoryDateTime(createdAt) || combineDateWithCurrentIstTime(formatDateToIso(new Date()));
-    const match = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    const match = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
     if (!match) return `${inventoryActionCode(action)}-${Date.now()}`;
-    const [, year, month, day, hours, minutes] = match;
-    return `${inventoryActionCode(action)}-${day}${month}${year}-${hours}${minutes}`;
+    const [, year, month, day, hours, minutes, seconds = '00'] = match;
+    return `${inventoryActionCode(action)}-${day}${month}${year}-${hours}${minutes}${seconds}`;
 }
 
 function formatInventoryDateTimeDisplay(value) {
@@ -11696,8 +11696,9 @@ function buildRefillLotId(row) {
     const size = row.lotSize === '' || row.lotSize == null ? '' : String(row.lotSize).trim();
     const dateIso = formatInventoryDateForInput(row.deliveryDate || row.manufactureDate);
     const dateTag = dateIso ? dateIso.replace(/-/g, '') : '';
-    const parts = [size, dateTag].filter(Boolean);
-    return parts.length ? `REF${parts.join('')}` : '';
+    const mfgPrefix = row.manufacturerName ? String(row.manufacturerName).trim().slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+    const parts = [mfgPrefix, size, dateTag].filter(Boolean);
+    return parts.length ? `REF-${parts.join('-')}` : '';
 }
 
 function getCurrentIstTimeParts() {
@@ -11792,6 +11793,7 @@ function movementCode(value) {
     if (value === 'Inbound') return 'INB';
     if (value === 'Issue') return 'ISS';
     if (value === 'Sale') return 'SAL';
+    if (value === 'Return') return 'RET';
     return 'MOV';
 }
 
