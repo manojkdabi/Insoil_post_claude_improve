@@ -12285,7 +12285,7 @@ function addInventoryRow(type) {
 
 function deleteInventoryRows(type) {
     if (!isInventoryAdmin()) {
-        alert('Admin login required to delete rows.');
+        showToast('Admin login required to delete rows.', 'warning');
         return;
     }
     const rows = inventoryState[type] || [];
@@ -12296,7 +12296,7 @@ function deleteInventoryRows(type) {
         selectedIds = new Set(checks.map(c => c.dataset.rowId));
     }
     if (!selectedIds.size) {
-        alert('Select at least one row to delete.');
+        showToast('Select at least one row to delete.', 'warning');
         return;
     }
     inventoryState[type] = rows.filter(r => !selectedIds.has(r.id));
@@ -12362,7 +12362,7 @@ function updateInventoryFieldInline(type, id, field, value) {
     const row = rows.find(r => r.id === id) || (type === 'approvals' ? rows.find(r => r.requestId === id) : null);
     if (!row) return;
     if (type === 'parts' && (field === 'confirmedBy' || field === 'issuedTo') && !isValidEmail(value)) {
-        alert('Please enter a valid email address.');
+        showToast('Please enter a valid email address.', 'warning');
         return;
     }
     if (type === 'clients' && field === 'clientType') {
@@ -12527,6 +12527,10 @@ function saveInventoryTable(type) {
         const uniqueNeg = [...new Set(negItems)];
         if (uniqueNeg.length > 0) {
             showToast(`⚠ Stock will go negative for: ${uniqueNeg.join(', ')}. Check quantities.`, 'warning', 8000);
+        }
+        const orphanCount = inventoryState.liquidation.filter(row => !row.item || !String(row.item).trim()).length;
+        if (orphanCount > 0) {
+            showToast(`⚠ ${orphanCount} liquidation row(s) have no item name — stock deduction will be skipped for these rows.`, 'warning', 7000);
         }
     }
     saveInventoryData(type);
@@ -13038,7 +13042,7 @@ function toggleInventoryAcknowledged(id, checked) {
     const row = inventoryState.liquidation.find(r => r.id === id);
     if (!row) return;
     if (checked && row.status !== 'Approved') {
-        alert('Approval required before acknowledgment.');
+        showToast('Approval required before acknowledgment.', 'warning');
         row.acknowledged = false;
     } else {
         row.acknowledged = !!checked;
@@ -13467,6 +13471,7 @@ function approveInventoryRequest(requestId, status) {
     setInventoryDirty(true);
     renderInventoryLiquidation();
     refreshInventoryApprovals();
+    saveInventoryData('approvals');
 }
 
 function applyAutoFitScale() {
