@@ -8801,6 +8801,35 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
 }
 
 /**
+ * Batch-clear Place, GPS, State in RGB_Data for rows moved back from QA/QC to RGB.
+ * Called by moveDataToRGB() after a successful move-back so that the re-imported row
+ * in the RGB module starts with a blank location (user must re-enter Place).
+ * @param {Array<{Device_ID:string, Test_ID:string}>} pairs
+ */
+function clearRGBLocationBatch_(pairs) {
+  try {
+    if (!Array.isArray(pairs) || !pairs.length) return { ok: true, cleared: 0 };
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const rgbSheet = ss.getSheetByName('RGB_Data');
+    if (!rgbSheet) return { ok: true, cleared: 0 };
+    let cleared = 0;
+    pairs.forEach(function(p) {
+      const did = String(p.Device_ID || '').trim();
+      const tid = String(p.Test_ID   || '').trim();
+      // Pass empty strings to clear Place, GPS, State fields on the sheet
+      if (did && tid && updateSheetLocation_(rgbSheet, did, tid, /*place*/'', /*gps*/'', /*state*/'')) {
+        cleared++;
+      }
+    });
+    Logger.log('clearRGBLocationBatch_: Cleared %d row(s)', cleared);
+    return { ok: true, cleared: cleared };
+  } catch (e) {
+    Logger.log('clearRGBLocationBatch_ error: %s', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Helper function to update Place, GPS, State in a specific sheet
  * Returns true if a row was found and updated, false otherwise
  */
@@ -8831,17 +8860,18 @@ function updateSheetLocation_(sheet, deviceId, testId, place, gps, state) {
 
     if (rowDeviceId === deviceId && rowTestId === testId) {
       // Update Place, GPS, State columns if they exist
+      // Note: empty string is a valid value (used to clear the field)
       let cellsUpdated = 0;
       
-      if (placeIdx !== -1 && place) {
+      if (placeIdx !== -1) {
         sheet.getRange(i + 1, placeIdx + 1).setValue(place);
         cellsUpdated++;
       }
-      if (gpsIdx !== -1 && gps) {
+      if (gpsIdx !== -1) {
         sheet.getRange(i + 1, gpsIdx + 1).setValue(gps);
         cellsUpdated++;
       }
-      if (stateIdx !== -1 && state) {
+      if (stateIdx !== -1) {
         sheet.getRange(i + 1, stateIdx + 1).setValue(state);
         cellsUpdated++;
       }

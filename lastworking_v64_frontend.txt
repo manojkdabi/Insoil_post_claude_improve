@@ -16985,27 +16985,30 @@ function renderTable(tab) {
       ? formatDateCell(row.Test_date ?? row.time ?? "")
       : normStr(row.Test_date ?? row.time ?? "");
 
-    // 5a) Place, GPS, State - EDITABLE for RGB metrics
-    // Place cell with autocomplete search
+    // 5a) Place, GPS, State - EDITABLE only in RGB Quarantined Data (source of truth)
+    //     In QAQC mode these are read-only mirrors of the RGB_Data values
+    // Place cell with autocomplete search (RGB) or read-only mirror (QAQC)
     const tdPlace = tr.insertCell();
     const placeInput = document.createElement('input');
     placeInput.type = 'text';
     placeInput.className = 'rgb-place-input';
     placeInput.value = normStr(row.Place ?? row.place ?? "");
-    placeInput.placeholder = 'Search place...';
+    placeInput.placeholder = isRGB ? 'Search place...' : '';
     placeInput.dataset.rowId = normStr(row.id ?? "");
     placeInput.dataset.deviceId = normStr(row.Device_ID ?? row.did);
     placeInput.dataset.testId = normStr(row.Test_ID ?? row.tid);
+    if (!isRGB) { placeInput.readOnly = true; placeInput.disabled = true; }
     tdPlace.appendChild(placeInput);
 
-    // GPS cell - manually editable
+    // GPS cell - editable in RGB, read-only mirror in QAQC
     const tdGPS = tr.insertCell();
     const gpsInput = document.createElement('input');
     gpsInput.type = 'text';
     gpsInput.className = 'rgb-gps-input';
     gpsInput.value = normStr(row.GPS ?? row.gps ?? "");
-    gpsInput.placeholder = 'Lat, Lon';
+    gpsInput.placeholder = isRGB ? 'Lat, Lon' : '';
     gpsInput.dataset.rowId = normStr(row.id ?? "");
+    if (!isRGB) { gpsInput.readOnly = true; gpsInput.disabled = true; }
     tdGPS.appendChild(gpsInput);
 
     // State cell - read-only (greyed)
@@ -22133,9 +22136,27 @@ Skipped (not found / duplicate): ${skipped}`;
       else if (typeof updateQaqcActionButtons === 'function') updateQaqcActionButtons();
 
        // Refresh data in background; do not block success popup on this heavy call.
+      // Capture the moved Device_ID/Test_ID pairs so we can blank their location after refresh.
+      const movedPairs = req.map(r => ({ Device_ID: r.Device_ID, Test_ID: r.Test_ID }));
       google.script.run.withSuccessHandler(function(data) {
         if (data?.rgbData) window.rgbData = rgbData = data.rgbData;
         if (data?.qcData)  window.qcData  = qcData  = data.qcData;
+
+        // Gap 4: blank Place/GPS/State for rows that just moved back to RGB
+        // (the row is "fresh" — location must be re-entered in the RGB module)
+        (window.rgbData || []).forEach(function(r) {
+          const did = String(r.Device_ID ?? r.did ?? '');
+          const tid = String(r.Test_ID   ?? r.tid ?? '');
+          if (movedPairs.some(function(p) { return p.Device_ID === did && p.Test_ID === tid; })) {
+            r.Place = ''; r.place = '';
+            r.GPS   = ''; r.gps   = '';
+            r.State = ''; r.state = '';
+          }
+        });
+        // Persist the clearing to the RGB_Data sheet
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run.clearRGBLocationBatch_(movedPairs);
+        }
 
         renderTable('rgb');
         renderTable('qaqc');
@@ -24847,9 +24868,16 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
         .withSuccessHandler(function(result) {
             if (result && result.success) {
                 console.log('[RGB Location] ✅ Location data saved successfully to %d sheet(s)', result.sheetsUpdated || 0);
-                if (typeof showToast === 'function') {
-                    showToast(`Location saved to ${result.sheetsUpdated || 0} sheet(s)`, 'success');
-                }
+                // Gap 6: update in-memory rgbData so Raw RGB Data view reflects the new values immediately
+                (window.rgbData || []).forEach(function(r) {
+                    const did = String(r.Device_ID ?? r.did ?? '');
+                    const tid = String(r.Test_ID   ?? r.tid ?? '');
+                    if (did === String(deviceId) && tid === String(testId)) {
+                        r.Place = place; r.place = place;
+                        r.GPS   = gps;   r.gps   = gps;
+                        r.State = state; r.state = state;
+                    }
+                });
             } else {
                 console.error('[RGB Location] Failed to save:', result?.error);
                 if (typeof showToast === 'function') {
