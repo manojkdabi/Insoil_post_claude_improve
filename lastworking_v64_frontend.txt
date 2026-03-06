@@ -9775,6 +9775,7 @@
                   <th>Delivery Date</th>
                   <th>PO number</th>
                   <th>Notes</th>
+                  <th>Post to Stock</th>
                 </tr>
               </thead>
               <tbody id="inv-refill-body"></tbody>
@@ -12299,6 +12300,15 @@ function deleteInventoryRows(type) {
         showToast('Select at least one row to delete.', 'warning');
         return;
     }
+    if (type === 'clients') {
+        const clientNames = new Set(rows.filter(r => selectedIds.has(r.id)).map(r => r.clientName).filter(Boolean));
+        const openRefs = inventoryState.liquidation.filter(l => l.status === 'Pending' && clientNames.has(l.issuedTo));
+        if (openRefs.length > 0) {
+            const names = [...clientNames].join(', ');
+            showToast(`⚠ ${openRefs.length} open liquidation request(s) reference "${names}". Resolve those requests before deleting this client.`, 'warning', 8000);
+            return;
+        }
+    }
     inventoryState[type] = rows.filter(r => !selectedIds.has(r.id));
     setInventoryDirty(true);
     renderInventoryAll();
@@ -12833,7 +12843,7 @@ function renderInventoryBuilt() {
               <option value="Sale" ${row.movement === 'Sale' ? 'selected' : ''}>Sale</option>
             </select>
           </td>
-          <td><input type="checkbox" ${row.confirmed ? 'checked' : ''} onchange="updateInventoryCheckbox('built','${safeId}','confirmed',this.checked)"></td>
+          <td><input type="checkbox" ${row.confirmed ? 'checked' : ''} onchange="confirmBuiltUnitToggle('${safeId}', this.checked)"></td>
           <td>${safeReqId}</td>
         `;
         tbody.appendChild(tr);
@@ -12842,6 +12852,22 @@ function renderInventoryBuilt() {
     applyInventoryEditState('built');
     reapplyInventorySearch('inv-built-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-built-table'));
+}
+
+function confirmBuiltUnitToggle(id, checked) {
+    updateInventoryCheckbox('built', id, 'confirmed', checked);
+    if (!checked) return;
+    const row = inventoryState.built.find(r => r.id === id);
+    if (!row) return;
+    const count = Number(row.count || 1);
+    const bomItems = inventoryState.constitution
+        .filter(b => b.item && Number(b.unitsPerDevice || 0) > 0)
+        .map(b => `${b.item} ×${Number(b.unitsPerDevice) * count}`);
+    if (bomItems.length) {
+        showToast(`✅ Build confirmed. BOM consumption: ${bomItems.join(', ')}.`, 'success', 7000);
+    } else {
+        showToast('✅ Build confirmed. (No BOM components found — add items to Device Constitution to track consumption.)', 'success', 5000);
+    }
 }
 
 function computeInventoryStock() {
@@ -13010,6 +13036,10 @@ function renderInventoryRefillBatch() {
           </td>
           <td><input class="db-input" value="${row.poNumber || ''}" oninput="updateInventoryFieldInline('refill','${row.id}','poNumber',this.value)"></td>
           <td><input class="db-input" value="${row.notes || ''}" oninput="updateInventoryFieldInline('refill','${row.id}','notes',this.value)"></td>
+          <td>${row.postedToStock
+            ? `<span style="color:var(--color-success,#22c55e);font-weight:600;">✓ Posted</span>`
+            : `<button class="btn btn-sm btn-green" onclick="postRefillToPartsStock('${row.id}')">↑ Post to Stock</button>`
+          }</td>
         `;
         tbody.appendChild(tr);
     });
@@ -13017,6 +13047,43 @@ function renderInventoryRefillBatch() {
     applyInventoryEditState('refill');
     reapplyInventorySearch('inv-refill-table');
     requestAnimationFrame(() => adjustInventoryTableWidths('inv-refill-table'));
+}
+
+function postRefillToPartsStock(refillId) {
+    const row = inventoryState.refill.find(r => r.id === refillId);
+    if (!row) return;
+    if (!row.refillId || !row.lotSize) {
+        showToast('⚠ Fill in Refill Box ID and Lot size before posting to stock.', 'warning', 5000);
+        return;
+    }
+    if (row.postedToStock) {
+        showToast('This refill batch has already been posted to Parts Stock.', 'warning');
+        return;
+    }
+    const nowDateTime = new Date().toISOString();
+    const newId = 'inv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    inventoryState.parts.push({
+        id: newId,
+        category: '',
+        itemClass: '',
+        item: String(row.refillId || ''),
+        unit: '',
+        qty: Number(row.lotSize) || 0,
+        costPerUnit: '',
+        movement: 'Inbound',
+        date: row.deliveryDate || nowDateTime,
+        deliveryDate: row.deliveryDate || nowDateTime,
+        poNumber: row.poNumber || '',
+        confirmedBy: row.manufacturerName || '',
+        issuedTo: '',
+        requestId: `REF-${row.refillId}`,
+        reorderLevel: null
+    });
+    row.postedToStock = true;
+    setInventoryDirty(true);
+    renderInventoryAll();
+    showToast(`✅ "${row.refillId}" posted to Parts Stock as Inbound (qty: ${row.lotSize}).`, 'success', 5000);
+    inventoryTab('stock');
 }
 
 function clientContactInput(input, rowId) {
