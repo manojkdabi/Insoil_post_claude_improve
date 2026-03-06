@@ -2604,6 +2604,23 @@
       display: block;
     }
 
+    #rgb-move-count, #qaqc-move-count {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: #fff;
+      color: #4f46e5;
+      font-size: 0.68rem;
+      font-weight: 700;
+      margin-left: 4px;
+      vertical-align: middle;
+      line-height: 1;
+    }
+
     #mod-results .results-panel {
       flex: 1 1 auto;
       display: flex;
@@ -7285,13 +7302,14 @@
         <div class="toolbar">
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
             <button class="btn btn-orange" onclick="downloadCSVTemplate()" title="Download CSV import template">📄 Template</button>
-            <button class="btn btn-slate" onclick="exportExcel('rgb')">Export</button>
+            <button class="btn btn-slate" onclick="exportExcel('rgb')">Export Excel</button>
+            <button class="btn btn-slate" onclick="exportRgbCsv()">Export CSV</button>
             <button class="btn btn-red" onclick="resetData()">Reset</button>
 
             <div class="divider-v"></div>
 
             <button class="btn btn-outline" onclick="refreshRgbCalculatedMetrics()">Refresh Metrics</button>
-            <button class="btn btn-indigo" onclick="moveDataToQC()">Move to QC ➔</button>
+            <button id="btn-rgb-move" class="btn btn-indigo" onclick="moveDataToQC()">Move to QC ➔ <span id="rgb-move-count"></span></button>
           </div>
 
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
@@ -7308,6 +7326,15 @@
             <button class="btn btn-teal" onclick="document.getElementById('csvImport').click()">Import CSV</button>
           </div>
 
+          <div class="toolbar-row" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span style="font-size:11px; color:#6b7280; font-weight:500;">Range:</span>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('today')">Today</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('7d')">Last 7d</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('30d')">Last 30d</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('month')">This Month</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setRgbDatePreset('all')">All</button>
+          </div>
+
           <input type="file" id="csvImport" accept=".csv" style="display:none;" onchange="client_ImportCSV_CreateRGBData(this)">
         </div>
       </div>
@@ -7315,6 +7342,7 @@
       <div class="rgb-panel">
         <div class="panel-label">
           <span class="rgb-panel-title" id="rgb-panel-title">CALCULATED METRICS</span>
+          <span id="rgb-missing-chip" style="display:none; margin-left:8px; padding:2px 8px; border-radius:12px; background:#fef3c7; color:#b45309; font-size:11px; font-weight:600;"></span>
           <label class="qaqc-toggle">
             <span class="qaqc-toggle-label">Calculated</span>
             <input id="rgb-view-toggle" type="checkbox" onchange="setRgbFocus(this.checked ? 'raw' : 'metrics')">
@@ -14348,6 +14376,107 @@ function normalizeMasterIdList_(list, defaultValue) {
 
 
 
+function updateRgbActionButtons() {
+  const n = (window.checkedRows?.rgb || []).length;
+  const badge = document.getElementById('rgb-move-count');
+  if (badge) {
+    badge.textContent = n > 0 ? String(n) : '';
+    badge.style.display = n > 0 ? 'inline-flex' : 'none';
+  }
+  const btn = document.getElementById('btn-rgb-move');
+  if (btn) btn.disabled = false;
+}
+
+function updateQaqcActionButtons() {
+  const n = (window.checkedRows?.qaqc || []).length;
+  const badge = document.getElementById('qaqc-move-count');
+  if (badge) {
+    badge.textContent = n > 0 ? String(n) : '';
+    badge.style.display = n > 0 ? 'inline-flex' : 'none';
+  }
+}
+
+function updateRgbMissingChip() {
+  const chip = document.getElementById('rgb-missing-chip');
+  if (!chip) return;
+  const rows = window.rgbData || rgbData || [];
+  const missingCount = rows.filter(r => typeof isMissingRgbFields === 'function' ? isMissingRgbFields(r) : false).length;
+  if (missingCount > 0) {
+    chip.textContent = '⚠ ' + missingCount + ' row' + (missingCount === 1 ? '' : 's') + ' missing RGB data';
+    chip.style.display = 'inline-block';
+  } else {
+    chip.style.display = 'none';
+  }
+}
+
+function setRgbDatePreset(preset) {
+  const fromEl = document.getElementById('date-rgb-from');
+  const toEl = document.getElementById('date-rgb-to');
+  if (!fromEl || !toEl) return;
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0, 10);
+  if (preset === 'today') {
+    fromEl.value = fmt(today);
+    toEl.value = fmt(today);
+  } else if (preset === '7d') {
+    const d = new Date(today); d.setDate(d.getDate() - 6);
+    fromEl.value = fmt(d);
+    toEl.value = fmt(today);
+  } else if (preset === '30d') {
+    const d = new Date(today); d.setDate(d.getDate() - 29);
+    fromEl.value = fmt(d);
+    toEl.value = fmt(today);
+  } else if (preset === 'month') {
+    fromEl.value = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+    toEl.value = fmt(today);
+  } else if (preset === 'all') {
+    fromEl.value = '';
+    toEl.value = '';
+  }
+  if (typeof renderTable === 'function') renderTable('rgb');
+}
+
+function exportRgbCsv() {
+  const data = window.currentFilteredRGB || window.rgbData || rgbData || [];
+  if (!data.length) { showToast('No data to export.', 'warning'); return; }
+  const normStr = v => String(v ?? '');
+  const toNum = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const getBase = (d, w) => {
+    if (w === 'tid') return normStr(d.tid ?? d.Test_ID ?? d['Test ID'] ?? '');
+    if (w === 'did') return normStr(d.did ?? d.Device_ID ?? d['Device ID'] ?? '');
+    if (w === 'time') return normStr(d.time ?? d.Test_date ?? d['Date'] ?? '');
+    return '';
+  };
+  const getMetric = (d, key) => {
+    if (Object.prototype.hasOwnProperty.call(d, key) && d[key] !== '' && d[key] != null) return d[key];
+    if (d.raw) {
+      if (typeof safeCalcMetric === 'function') return safeCalcMetric(d.raw, key);
+      if (typeof calcMetric === 'function') return calcMetric(d.raw, key);
+    }
+    return '';
+  };
+  const esc = v => { const s = String(v ?? ''); if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"'; return s; };
+  const metricCols = Array.isArray(METRIC_COLS_FLAT) ? METRIC_COLS_FLAT : (Array.isArray(cols) ? cols : []);
+  const header = ['Test ID', 'Device ID', 'Date', ...metricCols.map(c => c.label || c.n || c.k)].map(esc).join(',');
+  const rows = data.map(d => {
+    const base = [getBase(d,'tid'), getBase(d,'did'), getBase(d,'time')].map(esc);
+    const metrics = metricCols.map(c => {
+      const v = getMetric(d, c.k);
+      const n = toNum(v);
+      return esc(n != null ? n.toFixed(3) : (v === null || v === undefined ? '' : v));
+    });
+    return [...base, ...metrics].join(',');
+  });
+  const csv = [header, ...rows].join('\n');
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `rgb-data-${dateStr}.csv`;
+  a.click();
+  showToast('CSV exported ✅', 'success');
+}
+
 // -------------------------------
 // SAFE ACTION BUTTON WRAPPERS
 // -------------------------------
@@ -16373,15 +16502,24 @@ function renderTable(tab) {
   const totalCols = 12 + ((METRIC_COLS_FLAT && METRIC_COLS_FLAT.length) ? METRIC_COLS_FLAT.length : 0);
 
   if (!pageData.length) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = totalCols;
-    td.style.padding = "20px";
-    td.style.color = "#777";
-    td.style.textAlign = "center";
-    td.textContent = "No matching records found";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+    const isFiltered = !!(searchDev || searchTest || dateFrom || dateTo);
+    if (typeof renderEmptyState === 'function') {
+      renderEmptyState(tbody, totalCols,
+        isFiltered ? 'No matching records found' : 'No data loaded',
+        isFiltered ? 'Try adjusting your date range or search filters.' : 'Import a CSV or load data from the server.');
+    } else {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = totalCols;
+      td.style.padding = "20px";
+      td.style.color = "#777";
+      td.style.textAlign = "center";
+      td.textContent = isFiltered ? "No matching records found" : "No data loaded";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+    if (isRGB && typeof updateRgbActionButtons === "function") updateRgbActionButtons();
+    if (isRGB && typeof updateRgbMissingChip === "function") updateRgbMissingChip();
     return;
   }
 
@@ -16562,8 +16700,7 @@ function renderTable(tab) {
 
   if (!isRGB && typeof updateQaqcActionButtons === "function") updateQaqcActionButtons();
   if (isRGB && typeof updateRgbActionButtons === "function") updateRgbActionButtons();
-  
-  // Initialize place autocomplete for RGB metrics table
+  if (isRGB && typeof updateRgbMissingChip === "function") updateRgbMissingChip();
   if (isRGB && typeof initAllRGBLocationAutocomplete === 'function') {
     // Use setTimeout to ensure DOM is ready
     setTimeout(() => initAllRGBLocationAutocomplete(), 100);
@@ -21505,8 +21642,7 @@ function moveDataToQC() {
   const n = selected.length;
 
   if (!n) {
-    alert("No rows selected. Please QC-toggle at least one row in RGB/Abs, then click Move to QC.");
-    return;
+    showToast('No rows selected. Please QC-toggle at least one row in RGB/Abs, then click Move to QC.', 'warning', 5000); return;
   }
 
   const globalBatchInput = (document.getElementById('qcBatchInput')?.value || '').trim();
@@ -21530,8 +21666,7 @@ function moveDataToQC() {
   }).filter(Boolean);
 
   if (!req.length) {
-    alert("Selected IDs were not found in current RGB data. Refresh and try again.");
-    return;
+    showToast('Selected IDs were not found in current RGB data. Refresh and try again.', 'warning', 5000); return;
   }
 
   const uniqueBatches = [...new Set(req.map(r => (r.QCBatch_ID || 'Default').trim()).filter(Boolean))];
@@ -21545,11 +21680,8 @@ function moveDataToQC() {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || res.ok !== true) {
-        alert("Move failed: " + (res?.message || "Unknown error"));
+        showToast('Move failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
         return;
-      }
-
-      const moved   = Number(res.moved   ?? req.length);
       const removed = Number(res.removed ?? moved);
       const skipped = Number(res.skipped ?? 0);
 
@@ -21557,7 +21689,7 @@ function moveDataToQC() {
 Removed from RGB/Abs: ${removed}`;
       if (skipped) msg += `
 Skipped (not found / duplicate): ${skipped}`;
-      alert(msg);
+      showToast(msg, 'success', 5000);
 
         // Clear selection quickly so UI does not appear stuck while heavy refresh runs.
       window.checkedRows.rgb = [];
@@ -21578,7 +21710,7 @@ if (typeof safeUpdateQaqcActionButtons === "function") safeUpdateQaqcActionButto
       }).getOperationalData();
     })
     .withFailureHandler(function(err) {
-      alert("Move failed: " + (err?.message || err));
+      showToast('Move failed: ' + (err?.message || err), 'error', 6000);
     })
     .syncMoveDataToQC(req);
 }
@@ -21594,8 +21726,7 @@ function moveDataToRGB() {
   const n = selected.length;
 
   if (!n) {
-    alert("No rows selected. Please QC-toggle at least one row in QA/QC, then click Move to RGB/Abs.");
-    return;
+    showToast('No rows selected. Please QC-toggle at least one row in QA/QC, then click Move to RGB/Abs.', 'warning', 5000); return;
   }
 
   const ok = confirm(`Want to move ${n} QA/QC row(s) to RGB/Abs?`);
@@ -21617,18 +21748,14 @@ function moveDataToRGB() {
   }).filter(Boolean);
 
   if (!req.length) {
-    alert("Selected IDs were not found in current QA/QC data. Refresh and try again.");
-    return;
-  }
-
-  window.__moveBusy = true;
+    showToast('Selected IDs were not found in current QA/QC data. Refresh and try again.', 'warning', 5000); return;
 
   google.script.run
     .withSuccessHandler(function(res) {
       window.__moveBusy = false;
 
       if (!res || res.ok !== true) {
-        alert("Move failed: " + (res?.message || "Unknown error"));
+        showToast('Move failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
         return;
       }
 
@@ -21640,7 +21767,7 @@ function moveDataToRGB() {
 Removed from QA/QC: ${removed}`;
       if (skipped) msg += `
 Skipped (not found / duplicate): ${skipped}`;
-      alert(msg);
+      showToast(msg, 'success', 5000);
 
         // Clear selection quickly so UI does not appear stuck while heavy refresh runs.
       window.checkedRows.qaqc = [];
@@ -21663,7 +21790,7 @@ Skipped (not found / duplicate): ${skipped}`;
     })
     .withFailureHandler(function(err) {
       window.__moveBusy = false;
-      alert("Move failed: " + (err?.message || err));
+      showToast('Move failed: ' + (err?.message || err), 'error', 6000);
     })
     .syncMoveDataToRGB(req);
 }
