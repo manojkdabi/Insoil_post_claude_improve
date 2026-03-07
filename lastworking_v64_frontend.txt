@@ -7780,6 +7780,10 @@
             <input type="text" id="search-qaqc-test" class="search-input" placeholder="Test ID" onkeyup="resetPageAndRender('qaqc')">
             <input type="text" id="search-qaqc-global" class="search-input" placeholder="🔍 Search all columns…" style="min-width:160px;" onkeyup="resetPageAndRender('qaqc')">
             <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="toggleQaqcColVisPanel()" title="Toggle column visibility">⊞ Columns</button>
+            <button class="btn btn-slate" style="font-size:11px;padding:2px 7px;" onclick="exportQcCsv()" title="Export QC Data as CSV">Export CSV</button>
+            <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="toggleQaqcSparklines()" id="btn-qaqc-sparklines" title="Toggle inline sparklines per row">📊 Sparklines</button>
+            <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="toggleQaqcColorCoding()" id="btn-qaqc-color" title="Toggle metric color coding">🎨 Color</button>
+            <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="toggleQaqcBatchSidebar()" title="Toggle batch sidebar">☰ Batches</button>
           </div>
 
           <div class="qaqc-controls qaqc-controls-results qaqc-toolbar-row">
@@ -7834,17 +7838,28 @@
                 Quarantined Data
                 <span class="panel-subtext">Select up to 15 Test IDs to compare</span>
               </span>
+              <span id="qaqc-health-chip" style="display:none; margin-left:8px; padding:2px 10px; border-radius:12px; background:#f0fdf4; border:1px solid #86efac; font-size:11px; font-weight:600; color:#166534;"></span>
               <div class="qaqc-toggle-group">
                 <span class="qaqc-toggle-label">Quarantine</span>
               </div>
             </div>
+            <div id="qaqc-batch-summary" style="display:flex; flex-wrap:wrap; gap:4px; padding:4px 8px; min-height:0;"></div>
 
+            <div style="display:flex; flex:1; overflow:hidden; position:relative;">
             <!-- ✅ Scroll wrapper (this is what scrolls) -->
-            <div class="qaqc-table-scroll">
+            <div class="qaqc-table-scroll" style="flex:1; overflow:auto;">
               <table id="tbl-qaqc-metrics" class="selectable-table">
                 <thead></thead>
                 <tbody></tbody>
               </table>
+            </div>
+            <div id="qaqc-batch-sidebar" style="display:none; width:200px; min-width:160px; border-left:1px solid #e5e7eb; background:#f9fafb; overflow-y:auto; flex-shrink:0;">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:#eff6ff; border-bottom:1px solid #bfdbfe; font-size:12px; font-weight:600;">
+                <span>QC Batches</span>
+                <button class="btn btn-outline" style="padding:1px 7px; font-size:12px;" onclick="toggleQaqcBatchSidebar()" title="Close sidebar">✕</button>
+              </div>
+              <div id="qaqc-sidebar-batch-list"></div>
+            </div>
             </div>
           </div>
 
@@ -15272,6 +15287,61 @@ function exportRgbCsv() {
   showToast('CSV exported ✅', 'success');
 }
 
+// ===== Weakness 13: CSV export for QC Data =====
+function exportQcCsv() {
+  const data = window.qcData || (typeof qcData !== 'undefined' ? qcData : []);
+  if (!data.length) { showToast('No QC data to export.', 'warning'); return; }
+  const normStr = v => String(v ?? '');
+  const toNum = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const getMetric = (d, key) => {
+    if (Object.prototype.hasOwnProperty.call(d, key) && d[key] !== '' && d[key] != null) return d[key];
+    if (d.raw) {
+      if (typeof safeCalcMetric === 'function') return safeCalcMetric(d.raw, key);
+      if (typeof calcMetric === 'function') return calcMetric(d.raw, key);
+    }
+    return '';
+  };
+  const getStatus = (row) => {
+    const did = row.Device_ID ?? row.did ?? '';
+    const tid = row.Test_ID ?? row.tid ?? '';
+    let auto = '';
+    try { if (typeof computeAutoQCStatus === 'function') auto = computeAutoQCStatus(row); } catch(e) {}
+    if (typeof getEffectiveQCStatusForDevice === 'function') return getEffectiveQCStatusForDevice(did, tid, auto);
+    return auto;
+  };
+  const esc = v => { const s = String(v ?? ''); if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"'; return s; };
+  const metricCols = Array.isArray(METRIC_COLS_FLAT) ? METRIC_COLS_FLAT : (Array.isArray(cols) ? cols : []);
+  const header = ['QC Status', 'Device ID', 'Test ID', 'Date', 'Client ID', 'Farm ID', 'QCBatch ID', 'Crop', 'Place', 'State', ...metricCols.map(c => c.label || c.n || c.k)].map(esc).join(',');
+  const rows = data.map(function(d) {
+    const base = [
+      getStatus(d),
+      normStr(d.Device_ID ?? d.did ?? ''),
+      normStr(d.Test_ID ?? d.tid ?? ''),
+      normStr(d.Test_date ?? d.time ?? ''),
+      normStr(d.Client_ID ?? ''),
+      normStr(d.Farm_ID ?? ''),
+      normStr(d.QCBatch_ID ?? d.qcBatchId ?? ''),
+      normStr(d.Crop ?? d.crop ?? ''),
+      normStr(d.Place ?? d.place ?? ''),
+      normStr(d.State ?? d.state ?? '')
+    ].map(esc);
+    const metrics = metricCols.map(function(c) {
+      const v = getMetric(d, c.k);
+      const n = toNum(v);
+      return esc(n != null ? n.toFixed(3) : (v === null || v === undefined ? '' : v));
+    });
+    return [...base, ...metrics].join(',');
+  });
+  const csv = [header, ...rows].join('\n');
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'qc-data-' + dateStr + '.csv';
+  a.click();
+  showToast('QC CSV exported \u2705', 'success');
+}
+
 // -------------------------------
 // SAFE ACTION BUTTON WRAPPERS
 // -------------------------------
@@ -17416,6 +17486,13 @@ function renderTable(tab) {
     });
   }
 
+  // Batch filter for QAQC (Weakness 11)
+  if (!isRGB && window.qaqcBatchFilter) {
+    filtered = filtered.filter(function(row) {
+      return (row.QCBatch_ID ?? row.qcBatchId ?? 'Default') === window.qaqcBatchFilter;
+    });
+  }
+
   // Global search filter (Feature 12) - only for RGB
   if (isRGB) {
     const globalSearch = (document.getElementById('search-rgb-global')?.value || '').trim().toLowerCase();
@@ -17549,7 +17626,7 @@ function renderTable(tab) {
     ${hiddenCols.has('GPS') ? '' : '<th>GPS</th>'}
     ${shv('State', 'State')}
     ${metricHeads}
-    ${isRGB && window.rgbSparklines ? '<th title="Nutrient profile sparkline">Sparkline</th>' : ''}
+    ${(isRGB && window.rgbSparklines) || (!isRGB && window.qaqcSparklines) ? '<th title="Nutrient profile sparkline">Sparkline</th>' : ''}
   </tr>`;
 
   // -------------------------------
@@ -17566,7 +17643,11 @@ function renderTable(tab) {
     const sparklineCol = (window.rgbSparklines ? 1 : 0);
     totalCols = 2 + visibleText + visibleMetric + sparklineCol; // 2 = checkbox + status badge
   } else {
-    totalCols = 12 + ((METRIC_COLS_FLAT && METRIC_COLS_FLAT.length) ? METRIC_COLS_FLAT.length : 0);
+    const textColKeys = ['Client_ID','Farm_ID','ProdBatch_ID','QCBatch_ID','Device_ID','Test_ID','Crop','Test_date','Place','GPS','State'];
+    const visibleText = textColKeys.filter(k => !hiddenCols.has(k)).length;
+    const visibleMetric = (METRIC_COLS_FLAT || []).filter(c => !hiddenCols.has(c.k)).length;
+    const sparklineColQ = (window.qaqcSparklines ? 1 : 0);
+    totalCols = 1 + visibleText + visibleMetric + sparklineColQ; // 1 = checkbox
   }
 
   if (!pageData.length) {
@@ -17821,16 +17902,18 @@ function renderTable(tab) {
       td.innerText = (n == null)
         ? (v === null || v === undefined ? "" : String(v))
         : fmt2(n);
-      // Feature 3: color coding
-      if (isRGB && window.rgbColorCoding && typeof getRgbMetricColor === 'function' && n !== null) {
+      // Feature 3: color coding (RGB + QAQC)
+      const colorCodingActive = (isRGB && window.rgbColorCoding) || (!isRGB && window.qaqcColorCoding);
+      if (colorCodingActive && typeof getRgbMetricColor === 'function' && n !== null) {
         const allVals = pageData.map(function(r) { return toNum(getMetricVal(r, c.k)); }).filter(function(x) { return x !== null; });
         const bg = getRgbMetricColor(c.k, n, allVals);
         if (bg) td.style.backgroundColor = bg;
       }
     });
 
-    // Feature 8: Inline sparklines — nutrient profile mini bar chart
-    if (isRGB && window.rgbSparklines && typeof renderRgbSparkline === 'function') {
+    // Feature 8: Inline sparklines — nutrient profile mini bar chart (RGB + QAQC)
+    const sparklinesActive = (isRGB && window.rgbSparklines) || (!isRGB && window.qaqcSparklines);
+    if (sparklinesActive && typeof renderRgbSparkline === 'function') {
       const tdSpark = tr.insertCell();
       tdSpark.className = 'rgb-sparkline-cell';
       tdSpark.appendChild(renderRgbSparkline(row, pageData));
@@ -17840,6 +17923,9 @@ function renderTable(tab) {
   });
 
   if (!isRGB && typeof updateQaqcActionButtons === "function") updateQaqcActionButtons();
+  if (!isRGB && typeof updateQaqcHealthChip === "function") updateQaqcHealthChip(filtered);
+  if (!isRGB && typeof renderQaqcBatchSummary === 'function') renderQaqcBatchSummary();
+  if (!isRGB && typeof renderQaqcBatchSidebar === 'function') renderQaqcBatchSidebar();
   if (isRGB && typeof updateRgbActionButtons === "function") updateRgbActionButtons();
   if (isRGB && typeof updateRgbMissingChip === "function") updateRgbMissingChip();
   if (isRGB && typeof renderRgbBatchSummary === 'function') renderRgbBatchSummary();
@@ -23145,6 +23231,44 @@ function showRetestModal(req, n) {
   if (reasonSel) reasonSel.value = '';
   const notesEl = document.getElementById('rgb-retest-notes');
   if (notesEl) notesEl.value = '';
+
+  // Weakness 15: Row preview table
+  try {
+    const wrap = document.getElementById('rgb-retest-preview-wrap');
+    const thead = document.getElementById('rgb-retest-preview-thead');
+    const tbody = document.getElementById('rgb-retest-preview-tbody');
+    if (wrap && thead && tbody && Array.isArray(req) && req.length) {
+      const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      thead.innerHTML = '<tr style="text-align:left;"><th style="padding:3px 6px;">Device ID</th><th style="padding:3px 6px;">Test ID</th><th style="padding:3px 6px;">Crop</th><th style="padding:3px 6px;">QC Status</th></tr>';
+      const src = window.qcData || (typeof qcData !== 'undefined' ? qcData : []);
+      const reqSet = new Set(req.map(function(r) {
+        return String(r.Device_ID ?? r.did ?? '') + '|' + String(r.Test_ID ?? r.tid ?? '');
+      }));
+      const rows = src.filter(function(row) {
+        return row && reqSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+      const getStatus = function(row) {
+        const did = row.Device_ID ?? row.did ?? '';
+        const tid = row.Test_ID ?? row.tid ?? '';
+        let auto = '';
+        try { if (typeof computeAutoQCStatus === 'function') auto = computeAutoQCStatus(row); } catch(e) {}
+        if (typeof getEffectiveQCStatusForDevice === 'function') return getEffectiveQCStatusForDevice(did, tid, auto);
+        return auto;
+      };
+      tbody.innerHTML = rows.map(function(row) {
+        const st = getStatus(row);
+        const stStyle = st === 'PASS' ? 'color:#166534;font-weight:600;' : st === 'FAIL' ? 'color:#991b1b;font-weight:600;' : '';
+        return '<tr style="border-top:1px solid #f1f5f9;">' +
+          '<td style="padding:3px 6px;">' + esc(row.Device_ID ?? row.did ?? '') + '</td>' +
+          '<td style="padding:3px 6px;">' + esc(row.Test_ID ?? row.tid ?? '') + '</td>' +
+          '<td style="padding:3px 6px;">' + esc(row.Crop ?? row.crop ?? '') + '</td>' +
+          '<td style="padding:3px 6px;' + stStyle + '">' + esc(st || '—') + '</td>' +
+          '</tr>';
+      }).join('');
+      wrap.style.display = rows.length ? '' : 'none';
+    }
+  } catch(e) { /* preview is non-critical */ }
+
   const modal = document.getElementById('rgb-retest-modal');
   if (modal) modal.classList.add('open');
 }
@@ -23220,6 +23344,112 @@ function renderRgbBatchSidebar() {
     html += '<div class="rgb-sidebar-batch-item' + (isActive ? ' active' : '') + '" onclick="setRgbBatchFilter(decodeURIComponent(\'' + encodeURIComponent(b) + '\'))">' + b + ' <span>' + counts[b] + '</span></div>';
   });
   list.innerHTML = html;
+}
+
+// ===== Weakness 10: QC pass rate health chip =====
+function updateQaqcHealthChip(filteredData) {
+  const chip = document.getElementById('qaqc-health-chip');
+  if (!chip) return;
+  if (!filteredData || !filteredData.length) { chip.style.display = 'none'; return; }
+  let pass = 0, fail = 0, pending = 0;
+  filteredData.forEach(function(row) {
+    if (!row) return;
+    const did = row.Device_ID ?? row.did ?? '';
+    const tid = row.Test_ID ?? row.tid ?? '';
+    let autoStatus = '';
+    if (typeof computeAutoQCStatus === 'function') {
+      try { autoStatus = computeAutoQCStatus(row); } catch(e) {}
+    }
+    const eff = (typeof getEffectiveQCStatusForDevice === 'function')
+      ? getEffectiveQCStatusForDevice(did, tid, autoStatus)
+      : autoStatus;
+    const s = String(eff || '').toUpperCase();
+    if (s === 'PASS') pass++;
+    else if (s === 'FAIL') fail++;
+    else pending++;
+  });
+  chip.textContent = '\u2705 ' + pass + ' PASS \u00b7 \u274c ' + fail + ' FAIL' + (pending ? ' \u00b7 \u23f3 ' + pending + ' Pending' : '');
+  chip.style.display = '';
+  chip.style.background = fail > 0 ? '#fef2f2' : '#f0fdf4';
+  chip.style.borderColor = fail > 0 ? '#fca5a5' : '#86efac';
+  chip.style.color = fail > 0 ? '#991b1b' : '#166534';
+}
+
+// ===== Weakness 11: QC Batch filter chips =====
+function renderQaqcBatchSummary() {
+  const container = document.getElementById('qaqc-batch-summary');
+  if (!container) return;
+  const src = window.qcData || [];
+  const counts = {};
+  let total = 0;
+  src.forEach(function(row) {
+    if (!row) return;
+    const b = (row.QCBatch_ID ?? row.qcBatchId ?? 'Default') || 'Default';
+    counts[b] = (counts[b] || 0) + 1;
+    total++;
+  });
+  if (!total) { container.innerHTML = ''; return; }
+  const active = window.qaqcBatchFilter || null;
+  let html = '<span class="rgb-batch-chip' + (active === null ? ' active' : '') + '" onclick="setQaqcBatchFilter(null)" title="Show all">All <span class="chip-count">(' + total + ')</span></span>';
+  Object.keys(counts).sort().forEach(function(b) {
+    const isActive = active === b;
+    html += '<span class="rgb-batch-chip' + (isActive ? ' active' : '') + '" onclick="setQaqcBatchFilter(decodeURIComponent(\'' + encodeURIComponent(b) + '\'))" title="Filter by ' + b.replace(/"/g, '&quot;') + '">' + b + ' <span class="chip-count">(' + counts[b] + ')</span></span>';
+  });
+  container.innerHTML = html;
+}
+
+function setQaqcBatchFilter(batch) {
+  window.qaqcBatchFilter = batch || null;
+  window.pageState = window.pageState || {};
+  window.pageState['qaqc'] = 1;
+  if (typeof renderTable === 'function') renderTable('qaqc');
+}
+
+// ===== Weakness 11: QC Batch sidebar =====
+function toggleQaqcBatchSidebar() {
+  const sidebar = document.getElementById('qaqc-batch-sidebar');
+  if (!sidebar) return;
+  const isOpen = sidebar.style.display !== 'none' && sidebar.style.display !== '';
+  sidebar.style.display = isOpen ? 'none' : 'flex';
+  sidebar.style.flexDirection = 'column';
+  if (!isOpen) renderQaqcBatchSidebar();
+}
+
+function renderQaqcBatchSidebar() {
+  const list = document.getElementById('qaqc-sidebar-batch-list');
+  if (!list) return;
+  const src = window.qcData || [];
+  const counts = {};
+  let total = 0;
+  src.forEach(function(row) {
+    if (!row) return;
+    const b = (row.QCBatch_ID ?? row.qcBatchId ?? 'Default') || 'Default';
+    counts[b] = (counts[b] || 0) + 1;
+    total++;
+  });
+  const active = window.qaqcBatchFilter || null;
+  let html = '<div class="rgb-sidebar-batch-item' + (active === null ? ' active' : '') + '" onclick="setQaqcBatchFilter(null)" style="padding:6px 10px;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;">All <span>' + total + '</span></div>';
+  Object.keys(counts).sort().forEach(function(b) {
+    const isActive = active === b;
+    html += '<div class="rgb-sidebar-batch-item' + (isActive ? ' active' : '') + '" onclick="setQaqcBatchFilter(decodeURIComponent(\'' + encodeURIComponent(b) + '\'))" style="padding:6px 10px;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;">' + b + ' <span>' + counts[b] + '</span></div>';
+  });
+  list.innerHTML = html;
+}
+
+// ===== Weakness 9: QAQC sparklines toggle =====
+function toggleQaqcSparklines() {
+  window.qaqcSparklines = !window.qaqcSparklines;
+  const btn = document.getElementById('btn-qaqc-sparklines');
+  if (btn) btn.style.fontWeight = window.qaqcSparklines ? '700' : '';
+  if (typeof renderTable === 'function') renderTable('qaqc');
+}
+
+// ===== Weakness 9: QAQC color coding toggle =====
+function toggleQaqcColorCoding() {
+  window.qaqcColorCoding = !window.qaqcColorCoding;
+  const btn = document.getElementById('btn-qaqc-color');
+  if (btn) btn.style.fontWeight = window.qaqcColorCoding ? '700' : '';
+  if (typeof renderTable === 'function') renderTable('qaqc');
 }
 
 function makeRowKey(r) {
@@ -25935,6 +26165,35 @@ function setQaqcFocus(mode) {
 
     if (typeof populateQaqcStatusFilters === 'function') populateQaqcStatusFilters({ preserveSelection: false });
 
+    // Weakness 12: Auto-select device/test from the first checked QAQC row
+    try {
+      const checked = (window.checkedRows && window.checkedRows.qaqc) || [];
+      if (checked.length > 0) {
+        const src = window.qcData || (typeof qcData !== 'undefined' ? qcData : []);
+        const firstId = String(checked[0]);
+        const firstRow = src.find(function(r) { return r && String(r.id) === firstId; });
+        if (firstRow) {
+          const devSel = document.getElementById('qaqc-status-device');
+          const testSel = document.getElementById('qaqc-status-test');
+          if (devSel) {
+            const devId = String(firstRow.Device_ID ?? firstRow.did ?? '');
+            // Set device dropdown — re-populate tests after
+            for (let i = 0; i < devSel.options.length; i++) {
+              if (devSel.options[i].value === devId) { devSel.selectedIndex = i; break; }
+            }
+            if (typeof onQaqcStatusDeviceChange === 'function') onQaqcStatusDeviceChange();
+            // Now set test
+            if (testSel) {
+              const tid = String(firstRow.Test_ID ?? firstRow.tid ?? '');
+              for (let i = 0; i < testSel.options.length; i++) {
+                if (testSel.options[i].value === tid) { testSel.selectedIndex = i; break; }
+              }
+              if (typeof onQaqcStatusTestChange === 'function') onQaqcStatusTestChange();
+            }
+          }
+        }
+      }
+    } catch(e) { /* auto-select is non-critical */ }
 
     // Populate parameter dropdown once (safe if called repeatedly)
     populateQCHistParamDropdown();
@@ -36139,6 +36398,12 @@ function _dbSortDefaultFirst_(arr) {
     <div id="rgb-retest-modal-box">
       <h3 id="rgb-retest-title">Move to RGB/Abs — Mark for Retest</h3>
       <p id="rgb-retest-count-msg">Moving 0 QA/QC row(s) back to RGB/Abs.</p>
+      <div id="rgb-retest-preview-wrap" style="display:none; margin-bottom:10px; max-height:180px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:6px;">
+        <table id="rgb-retest-preview-table" style="width:100%; border-collapse:collapse; font-size:11px;">
+          <thead id="rgb-retest-preview-thead" style="background:#f1f5f9; position:sticky; top:0;"></thead>
+          <tbody id="rgb-retest-preview-tbody"></tbody>
+        </table>
+      </div>
       <div>
         <label for="rgb-retest-reason">Reason for Retest</label>
         <select id="rgb-retest-reason">
