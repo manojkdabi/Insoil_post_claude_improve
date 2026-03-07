@@ -1859,37 +1859,45 @@ function syncMoveDataToQC(reqRows) {
     const dstLastRow = shDst.getLastRow();
     const dstLastCol = shDst.getLastColumn();
 
+    let dstHdrArray = [];
+    let schemaSynced = false;
     if (dstLastRow < 1 || dstLastCol < 1) {
       shDst.clear();
       shDst.getRange(1, 1, 1, wantCols).setValues([srcHdr]);
       shDst.setFrozenRows(1);
+      dstHdrArray = srcHdr.slice();
+      schemaSynced = true;
     } else {
-      const dstHdrExisting = shDst
+      dstHdrArray = shDst
         .getRange(1, 1, 1, Math.max(dstLastCol, wantCols))
         .getValues()[0]
         .map(h => String(h ?? ""));
 
-      const aligned = (dstHdrExisting.length >= wantCols) &&
-        (dstHdrExisting.slice(0, wantCols).join("|") === srcHdr.join("|"));
+      const aligned = (dstHdrArray.length >= wantCols) &&
+        (dstHdrArray.slice(0, wantCols).join("|") === srcHdr.join("|"));
 
-      // Write canonical header
-      shDst.getRange(1, 1, 1, wantCols).setValues([srcHdr]);
-      shDst.setFrozenRows(1);
+      if (!aligned) {
+        // Schema changed — write new header and pad existing rows
+        shDst.getRange(1, 1, 1, wantCols).setValues([srcHdr]);
+        if (shDst.getFrozenRows() < 1) shDst.setFrozenRows(1);
+        dstHdrArray = srcHdr.slice();
 
-      // If sheet previously had fewer cols, pad existing rows
-      if (!aligned && dstLastRow >= 2) {
-        const oldData = shDst.getRange(2, 1, dstLastRow - 1, dstLastCol).getValues();
-        const padded = oldData.map(r => {
-          const out = r.slice(0, wantCols);
-          while (out.length < wantCols) out.push("");
-          return out;
-        });
-        shDst.getRange(2, 1, padded.length, wantCols).setValues(padded);
+        if (dstLastRow >= 2) {
+          const oldData = shDst.getRange(2, 1, dstLastRow - 1, dstLastCol).getValues();
+          const padded = oldData.map(r => {
+            const out = r.slice(0, wantCols);
+            while (out.length < wantCols) out.push("");
+            return out;
+          });
+          shDst.getRange(2, 1, padded.length, wantCols).setValues(padded);
+        }
+        schemaSynced = true;
       }
+      // else: schema already aligned — reuse dstHdrArray, skip setValues(header) + setFrozenRows (saves API calls)
     }
 
-    const dstVals = shDst.getDataRange().getValues();
-    const dstHdr = dstVals[0].map(h => String(h ?? ""));
+    // Use already-read header data (no extra API call needed)
+    const dstHdr = dstHdrArray;
     const dstIdx = _buildHdrIndex_(dstHdr);
 
     const dDid = dstIdx["device_id"];
@@ -1938,12 +1946,19 @@ function syncMoveDataToQC(reqRows) {
       srcByDidTid.get(k2).push({ rowNum: r + 1, row });
     }
 
-    // Build dst map (existing rowNum)
+    // Build dst map (existing rowNum) — read only minimum columns needed, not all columns
+    const dstCurrentLastRow = schemaSynced ? shDst.getLastRow() : dstLastRow;
     const dstMap = new Map();
-    for (let r = 1; r < dstVals.length; r++) {
-      const row = dstVals[r];
-      const k = key3(row[dDid], row[dTid], row[dDat]);
-      if (k && !dstMap.has(k)) dstMap.set(k, r + 1);
+    if (dstCurrentLastRow >= 2 && dDid != null && dTid != null && dDat != null) {
+      const dataRows = dstCurrentLastRow - 1;
+      const colsToRead = [dDid, dTid, dDat];
+      const maxCol = Math.max(...colsToRead) + 1;
+      const keyBlock = shDst.getRange(2, 1, dataRows, maxCol).getValues();
+      for (let r = 0; r < keyBlock.length; r++) {
+        const row = keyBlock[r];
+        const k = key3(row[dDid], row[dTid], row[dDat]);
+        if (k && !dstMap.has(k)) dstMap.set(k, r + 2); // r is 0-based loop index; +1 for 1-based rows; +1 for header row
+      }
     }
 
     const appends = [];
@@ -1989,25 +2004,20 @@ function syncMoveDataToQC(reqRows) {
       deleteRows.push(hit.rowNum);
     });
 
-    // --- Batch write: apply updates in-memory then flush in one setValues call ---
-    if (updates.length || appends.length) {
-      // Re-read dstVals after schema sync to get current state
-      const currentDstVals = shDst.getDataRange().getValues();
+    // --- Targeted write: append new rows + update only changed rows (no full QC rewrite) ---
+    if (updates.length > 0) {
+      // Write only the updated rows individually (typically rare — same row moved twice)
       updates.forEach(u => {
-        // rowNum is 1-based; index 0 is header row
-        if (u.rowNum - 1 < currentDstVals.length) {
-          currentDstVals[u.rowNum - 1] = u.row;
-        }
+        shDst.getRange(u.rowNum, 1, 1, wantCols).setValues([u.row]);
+        shDst.getRange(u.rowNum, dDat + 1, 1, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
       });
-      appends.forEach(row => currentDstVals.push(row));
-      // Single write for all rows (excluding header already at index 0)
-      if (currentDstVals.length > 1) {
-        shDst.getRange(2, 1, currentDstVals.length - 1, wantCols).setValues(currentDstVals.slice(1));
-      }
     }
-
-    // Format Test_date display
-    shDst.getRange(2, dDat + 1, Math.max(0, shDst.getLastRow() - 1), 1).setNumberFormat("yyyy-mm-dd | HH:mm");
+    if (appends.length > 0) {
+      // Append only the new rows at the bottom — avoids reading+writing all existing QC data
+      const appendStart = shDst.getLastRow() + 1;
+      shDst.getRange(appendStart, 1, appends.length, wantCols).setValues(appends);
+      shDst.getRange(appendStart, dDat + 1, appends.length, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
+    }
 
     // CUT from RGB_Data — batch overwrite (much faster than O(N) deleteRow calls)
     if (deleteRows.length > 0) {
@@ -2191,22 +2201,18 @@ function syncMoveDataToRGB(reqRows) {
       deleteRows.push(hit.rowNum);
     });
 
-    // --- Batch write: apply updates in-memory then flush in one setValues call ---
-    if (updates.length || appends.length) {
-      const currentDstVals = shDst.getDataRange().getValues();
+    // --- Targeted write: append new rows + update only changed rows (no full RGB rewrite) ---
+    if (updates.length > 0) {
       updates.forEach(u => {
-        if (u.rowNum - 1 < currentDstVals.length) {
-          currentDstVals[u.rowNum - 1] = u.row;
-        }
+        shDst.getRange(u.rowNum, 1, 1, wantCols).setValues([u.row]);
+        shDst.getRange(u.rowNum, dDat + 1, 1, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
       });
-      appends.forEach(row => currentDstVals.push(row));
-      if (currentDstVals.length > 1) {
-        shDst.getRange(2, 1, currentDstVals.length - 1, wantCols).setValues(currentDstVals.slice(1));
-      }
     }
-
-    // Format Test_date display
-    shDst.getRange(2, dDat + 1, Math.max(0, shDst.getLastRow() - 1), 1).setNumberFormat("yyyy-mm-dd | HH:mm");
+    if (appends.length > 0) {
+      const appendStart = shDst.getLastRow() + 1;
+      shDst.getRange(appendStart, 1, appends.length, wantCols).setValues(appends);
+      shDst.getRange(appendStart, dDat + 1, appends.length, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
+    }
 
     // CUT from QC_Data — batch overwrite (much faster than O(N) deleteRow calls)
     if (deleteRows.length > 0) {

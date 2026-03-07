@@ -22513,9 +22513,10 @@ function moveDataToQC() {
 }
 
 function executeMoveToQC(req, n) {
-  // Show immediate progress feedback in the undo bar area
+  // Show immediate progress feedback — toast (always visible) + undo bar
   const moveBtn = document.getElementById('btn-rgb-move');
-  if (moveBtn) moveBtn.disabled = true;
+  if (moveBtn) { moveBtn.disabled = true; moveBtn.textContent = '\u23F3 Moving\u2026'; }
+  showToast('\u23F3 Moving ' + n + ' row(s) to QA/QC\u2026 please wait.', 'info', 120000);
   (function() {
     const bar = document.getElementById('rgb-undo-bar');
     const msg = document.getElementById('rgb-undo-msg');
@@ -22530,8 +22531,10 @@ function executeMoveToQC(req, n) {
 
   google.script.run
     .withSuccessHandler(function(res) {
-      // Re-enable button
-      if (moveBtn) moveBtn.disabled = false;
+      // Re-enable button and clear progress toast
+      if (moveBtn) { moveBtn.disabled = false; moveBtn.innerHTML = 'Move to QC \u2794 <span id="rgb-move-count"></span>'; }
+      // Dismiss the progress toast (show zero-duration replacement to clear it)
+      dismissProgressToast();
 
       if (!res || res.ok !== true) {
         const bar = document.getElementById('rgb-undo-bar');
@@ -22588,7 +22591,8 @@ function executeMoveToQC(req, n) {
       renderTable('qaqc');
     })
     .withFailureHandler(function(err) {
-      if (moveBtn) moveBtn.disabled = false;
+      if (moveBtn) { moveBtn.disabled = false; moveBtn.innerHTML = 'Move to QC \u2794 <span id="rgb-move-count"></span>'; }
+      dismissProgressToast();
       const bar = document.getElementById('rgb-undo-bar');
       if (bar) bar.style.display = 'none';
 
@@ -22650,9 +22654,10 @@ function moveDataToRGB() {
 }
 
 function executeRetestMove(req, n) {
-  // Show immediate progress feedback
+  // Show immediate progress feedback — toast (always visible) + progress bar
   const moveBtn = document.getElementById('btn-qaqc-move');
-  if (moveBtn) moveBtn.disabled = true;
+  if (moveBtn) { moveBtn.disabled = true; moveBtn.innerHTML = '\u23F3 Moving\u2026'; }
+  showToast('\u23F3 Moving ' + n + ' row(s) to RGB/Abs\u2026 please wait.', 'info', 120000);
   (function() {
     const bar = document.getElementById('qaqc-progress-bar');
     const msg = document.getElementById('qaqc-progress-msg');
@@ -22665,7 +22670,8 @@ function executeRetestMove(req, n) {
   google.script.run
     .withSuccessHandler(function(res) {
       window.__moveBusy = false;
-      if (moveBtn) moveBtn.disabled = false;
+      if (moveBtn) { moveBtn.disabled = false; moveBtn.innerHTML = 'Move to RGB/Abs \u2b05 <span id="qaqc-move-count"></span>'; }
+      dismissProgressToast();
 
       // Hide progress bar
       (function() {
@@ -22730,7 +22736,8 @@ function executeRetestMove(req, n) {
     })
     .withFailureHandler(function(err) {
       window.__moveBusy = false;
-      if (moveBtn) moveBtn.disabled = false;
+      if (moveBtn) { moveBtn.disabled = false; moveBtn.innerHTML = 'Move to RGB/Abs \u2b05 <span id="qaqc-move-count"></span>'; }
+      dismissProgressToast();
       const bar = document.getElementById('qaqc-progress-bar');
       if (bar) bar.style.display = 'none';
       showToast('Move failed: ' + (err?.message || err), 'error', 6000);
@@ -33373,12 +33380,25 @@ function showToast(message, type = 'success', duration = 3000) {
   toast.setAttribute('role', 'status');
   toast.setAttribute('aria-live', 'polite');
 
-  container.appendChild(toast);
+  if (message) {
+    // Tag progress-type toasts so they can be dismissed early
+    if (type === 'info' && duration >= 60000) toast.dataset.progressToast = '1';
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.animation = 'slideOutRight 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+}
 
-  setTimeout(() => {
-    toast.style.animation = 'slideOutRight 0.3s ease';
-    setTimeout(() => toast.remove(), 300);
-  }, duration);
+/** Remove any pending progress toasts (long-lived info toasts) immediately. */
+function dismissProgressToast() {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  container.querySelectorAll('[data-progress-toast]').forEach(function(t) {
+    t.style.animation = 'slideOutRight 0.3s ease';
+    setTimeout(function() { t.remove(); }, 300);
+  });
 }
 
 
