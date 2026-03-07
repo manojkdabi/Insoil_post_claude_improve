@@ -7482,6 +7482,9 @@
                 <span class="qaqc-toggle-label">Raw RGB</span>
               </label>
             </div>
+            <div id="qaqc-progress-bar" role="alert" style="display:none; align-items:center; gap:8px; padding:6px 12px; background:#fef3c7; border:1px solid #fbbf24; border-radius:6px; font-size:12px; color:#92400e; margin-top:4px; flex-wrap:wrap;">
+              <span id="qaqc-progress-msg"></span>
+            </div>
           </div>
 
         </div>
@@ -14419,8 +14422,8 @@ function undoLastRgbMove() {
   if (!move) { showToast('Nothing to undo.', 'info', 3000); return; }
 
   const ageMs = Date.now() - move.movedAt;
-  if (ageMs > 65000) {
-    showToast('Undo window expired (> 60 s). Use the "Move to RGB/Abs" button instead.', 'warning', 5000);
+  if (ageMs > 35000) {
+    showToast('Undo window expired (> 30 s). Use the "Move to RGB/Abs" button instead.', 'warning', 5000);
     return;
   }
 
@@ -14434,26 +14437,51 @@ function undoLastRgbMove() {
   const bar = document.getElementById('rgb-undo-bar');
   if (bar) bar.style.display = 'none';
   if (window.__lastRgbMoveTimer) { clearInterval(window.__lastRgbMoveTimer); window.__lastRgbMoveTimer = null; }
+  const savedMove = move;
   window.__lastRgbMove = null;
+
+  // Show progress
+  const moveBtn = document.getElementById('btn-rgb-move');
+  if (moveBtn) moveBtn.disabled = true;
 
   google.script.run
     .withSuccessHandler(function (res) {
+      if (moveBtn) moveBtn.disabled = false;
       if (!res || res.ok !== true) {
         showToast('Undo failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
         return;
       }
-      showToast(`Undo complete — ${move.n} row(s) moved back to RGB/Abs.`, 'success', 5000);
-      google.script.run.withSuccessHandler(function (data) {
-        if (data?.rgbData) window.rgbData = rgbData = data.rgbData;
-        if (data?.qcData)  window.qcData  = qcData  = data.qcData;
-        renderTable('rgb');
-        renderTable('qaqc');
-      }).getOperationalData();
+      showToast('Undo complete \u2014 ' + savedMove.n + ' row(s) moved back to RGB/Abs.', 'success', 5000);
+
+      // Optimistic in-memory undo (no second GAS call)
+      const req = savedMove.req;
+      const movedSet = new Set(req.map(r => r.Device_ID + '|' + r.Test_ID));
+      const srcQcArray = window.qcData || qcData || [];
+
+      const undoneRows = srcQcArray.filter(function(row) {
+        return movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+
+      window.qcData = qcData = srcQcArray.filter(function(row) {
+        return !movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+
+      const newRgbRows = undoneRows.map(function(row) {
+        return Object.assign({}, row, {
+          Place: '', place: '', GPS: '', gps: '', State: '', state: '',
+          QCBatch_ID: '', qcBatchId: ''
+        });
+      });
+      window.rgbData = rgbData = (window.rgbData || rgbData || []).concat(newRgbRows);
+
+      renderTable('rgb');
+      renderTable('qaqc');
     })
     .withFailureHandler(function (err) {
+      if (moveBtn) moveBtn.disabled = false;
       showToast('Undo failed: ' + (err?.message || err), 'error', 6000);
     })
-    .syncMoveDataToRGB(move.req);
+    .syncMoveDataToRGB(savedMove.req);
 }
 
 // ==========================================
@@ -22018,7 +22046,6 @@ function moveDataToQC() {
     return {
       Device_ID:  row.Device_ID ?? row.did ?? row.device_id ?? "",
       Test_ID:    row.Test_ID   ?? row.tid ?? row.test_id ?? "",
-      // date optional; keep for compatibility
       Test_date:  row.Test_date ?? row.time ?? row.date ?? "",
       QCBatch_ID: batchToUse
     };
@@ -22036,52 +22063,91 @@ function moveDataToQC() {
   const ok = confirm(`Want to move ${req.length} RGB/Abs row(s) to Device QA/QC?\n${batchMsg}`);
   if (!ok) return;
 
+  // Show immediate progress feedback in the undo bar area
+  const moveBtn = document.getElementById('btn-rgb-move');
+  if (moveBtn) moveBtn.disabled = true;
+  (function() {
+    const bar = document.getElementById('rgb-undo-bar');
+    const msg = document.getElementById('rgb-undo-msg');
+    const timer = document.getElementById('rgb-undo-timer');
+    if (window.__lastRgbMoveTimer) { clearInterval(window.__lastRgbMoveTimer); window.__lastRgbMoveTimer = null; }
+    if (bar && msg) {
+      msg.textContent = '\u23F3 Moving ' + n + ' row(s) to QC\u2026 please wait.';
+      if (timer) timer.textContent = '';
+      bar.style.display = 'flex';
+    }
+  })();
+
   google.script.run
     .withSuccessHandler(function(res) {
+      // Re-enable button
+      if (moveBtn) moveBtn.disabled = false;
+
       if (!res || res.ok !== true) {
+        const bar = document.getElementById('rgb-undo-bar');
+        if (bar) bar.style.display = 'none';
         showToast('Move failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
         return;
       }
       const moved   = req.length;
-      const removed = Number(res.removed ?? moved);
       const skipped = Number(res.skipped ?? 0);
 
-        let msg = `${moved} RGB/Abs row(s) were moved to QA/QC successfully.
-Removed from RGB/Abs: ${removed}`;
-      if (skipped) msg += `
-Skipped (not found / duplicate): ${skipped}`;
+      let msg = moved + ' RGB/Abs row(s) moved to QA/QC successfully.';
+      if (skipped) msg += ' Skipped: ' + skipped + '.';
       showToast(msg, 'success', 5000);
 
-      // R13: Store undo state for 60-second in-session undo window
+      // R13: Store undo state — 30-second window
       window.__lastRgbMove = { req: req.slice(), n: moved, movedAt: Date.now() };
-      showRgbUndoBar(moved, 60);
+      showRgbUndoBar(moved, 30);
 
-        // Clear selection quickly so UI does not appear stuck while heavy refresh runs.
+      // --- Optimistic in-memory update (no second GAS call needed) ---
+      const movedSet = new Set(req.map(r => r.Device_ID + '|' + r.Test_ID));
+      const srcArray = window.rgbData || rgbData || [];
+
+      // Save full row objects before removal
+      const movedRows = srcArray.filter(function(row) {
+        return movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+
+      // Remove from rgbData
+      const newRgbData = srcArray.filter(function(row) {
+        return !movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+      window.rgbData = rgbData = newRgbData;
+
+      // Add to qcData (preserving all fields, setting batch ID)
+      const newQcRows = movedRows.map(function(row) {
+        const matchReq = req.find(function(r) {
+          return r.Device_ID === String(row.Device_ID ?? row.did ?? '') &&
+                 r.Test_ID   === String(row.Test_ID   ?? row.tid ?? '');
+        });
+        const batchId = matchReq ? matchReq.QCBatch_ID : 'Default';
+        return Object.assign({}, row, { QCBatch_ID: batchId, qcBatchId: batchId });
+      });
+      window.qcData = qcData = (window.qcData || qcData || []).concat(newQcRows);
+
+      // Clear selection
       window.checkedRows.rgb = [];
+      if (typeof safeUpdateRgbActionButtons === 'function') safeUpdateRgbActionButtons();
+      else if (typeof updateRgbActionButtons === 'function') updateRgbActionButtons();
+      if (typeof safeUpdateQaqcActionButtons === 'function') safeUpdateQaqcActionButtons();
+      else if (typeof updateQaqcActionButtons === 'function') updateQaqcActionButtons();
 
-         if (typeof safeUpdateRgbActionButtons === "function") safeUpdateRgbActionButtons();
-      else if (typeof updateRgbActionButtons === "function") updateRgbActionButtons();
-
-if (typeof safeUpdateQaqcActionButtons === "function") safeUpdateQaqcActionButtons();
-      else if (typeof updateQaqcActionButtons === "function") updateQaqcActionButtons();
-
-        // Refresh data in background; do not block success popup on this heavy call.
-      google.script.run.withSuccessHandler(function(data) {
-        if (data?.rgbData) window.rgbData = rgbData = data.rgbData;
-        if (data?.qcData)  window.qcData  = qcData  = data.qcData;
-        renderTable('rgb');
-        renderTable('qaqc');
-
-      }).getOperationalData();
+      // Immediate re-render — no second GAS round-trip
+      renderTable('rgb');
+      renderTable('qaqc');
     })
     .withFailureHandler(function(err) {
+      if (moveBtn) moveBtn.disabled = false;
+      const bar = document.getElementById('rgb-undo-bar');
+      if (bar) bar.style.display = 'none';
+
       const msg = String(err?.message || err || '');
       if (msg.toLowerCase().indexOf('not registered') !== -1 || msg.toLowerCase().indexOf('access denied') !== -1) {
-        // Auto-register the current user then retry
         google.script.run
           .withSuccessHandler(function(reg) {
             if (reg && reg.ok) {
-              showToast('✅ Account registered' + (reg.already ? ' (already existed)' : '') + '. Retrying Move to QC…', 'success', 3000);
+              showToast('✅ Account registered' + (reg.already ? ' (already existed)' : '') + '. Retrying Move to QC\u2026', 'success', 3000);
               setTimeout(function() { moveDataToQC(); }, 1500);
             } else {
               showToast('Move failed: ' + msg + '\n\nTo fix: open the Apps Script editor and run registerCurrentUser() once.', 'error', 10000);
@@ -22112,7 +22178,7 @@ function moveDataToRGB() {
     showToast('No rows selected. Please QC-toggle at least one row in QA/QC, then click Move to RGB/Abs.', 'warning', 5000); return;
   }
 
-  const ok = confirm(`Want to move ${n} QA/QC row(s) to RGB/Abs?`);
+  const ok = confirm('Want to move ' + n + ' QA/QC row(s) to RGB/Abs?');
   if (!ok) return;
 
   const req = selected.map(id => {
@@ -22124,7 +22190,6 @@ function moveDataToRGB() {
     return {
       Device_ID:  row.Device_ID ?? row.did ?? row.device_id ?? "",
       Test_ID:    row.Test_ID   ?? row.tid ?? row.test_id ?? "",
-      // date optional; backend should NOT rely on this for matching
       Test_date:  row.Test_date ?? row.time ?? row.date ?? row.test_date ?? "",
       QCBatch_ID: (String(batch || '').trim() || 'Default')
     };
@@ -22134,64 +22199,89 @@ function moveDataToRGB() {
     showToast('Selected IDs were not found in current QA/QC data. Refresh and try again.', 'warning', 5000); return;
   }
 
+  // Show immediate progress feedback
+  const moveBtn = document.getElementById('btn-qaqc-move');
+  if (moveBtn) moveBtn.disabled = true;
+  (function() {
+    const bar = document.getElementById('qaqc-progress-bar');
+    const msg = document.getElementById('qaqc-progress-msg');
+    if (bar && msg) {
+      msg.textContent = '\u23F3 Moving ' + n + ' row(s) to RGB/Abs\u2026 please wait.';
+      bar.style.display = 'flex';
+    }
+  })();
+
   google.script.run
     .withSuccessHandler(function(res) {
       window.__moveBusy = false;
+      if (moveBtn) moveBtn.disabled = false;
+
+      // Hide progress bar
+      (function() {
+        const bar = document.getElementById('qaqc-progress-bar');
+        if (bar) bar.style.display = 'none';
+      })();
 
       if (!res || res.ok !== true) {
         showToast('Move failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
         return;
       }
 
-      const moved   = Number(res.moved   ?? 0);
-      const removed = Number(res.removed ?? moved);
+      const moved   = req.length;
       const skipped = Number(res.skipped ?? 0);
 
-        let msg = `${moved} QA/QC row(s) were moved to RGB/Abs successfully.
-Removed from QA/QC: ${removed}`;
-      if (skipped) msg += `
-Skipped (not found / duplicate): ${skipped}`;
+      let msg = moved + ' QA/QC row(s) moved to RGB/Abs successfully.';
+      if (skipped) msg += ' Skipped: ' + skipped + '.';
       showToast(msg, 'success', 5000);
 
-        // Clear selection quickly so UI does not appear stuck while heavy refresh runs.
+      // --- Optimistic in-memory update (no second GAS call needed) ---
+      const movedSet = new Set(req.map(r => r.Device_ID + '|' + r.Test_ID));
+      const srcArray = window.qcData || qcData || [];
+
+      // Save full row objects before removal
+      const movedRows = srcArray.filter(function(row) {
+        return movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+
+      // Remove from qcData
+      const newQcData = srcArray.filter(function(row) {
+        return !movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+      window.qcData = qcData = newQcData;
+
+      // Add to rgbData with Place/GPS/State blanked (Gap 4: location reset on move-back)
+      const newRgbRows = movedRows.map(function(row) {
+        return Object.assign({}, row, {
+          Place: '', place: '',
+          GPS:   '', gps:   '',
+          State: '', state: '',
+          QCBatch_ID: '', qcBatchId: ''
+        });
+      });
+      window.rgbData = rgbData = (window.rgbData || rgbData || []).concat(newRgbRows);
+
+      // Persist the location clearing to the RGB_Data sheet (background, non-blocking)
+      const movedPairs = req.map(r => ({ Device_ID: r.Device_ID, Test_ID: r.Test_ID }));
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run.clearRGBLocationBatch(movedPairs);
+      }
+
+      // Clear selection
       window.checkedRows.qaqc = [];
-
-        if (typeof safeUpdateRgbActionButtons === 'function') safeUpdateRgbActionButtons();
+      if (typeof safeUpdateRgbActionButtons === 'function') safeUpdateRgbActionButtons();
       else if (typeof updateRgbActionButtons === 'function') updateRgbActionButtons();
-
-         if (typeof safeUpdateQaqcActionButtons === 'function') safeUpdateQaqcActionButtons();
+      if (typeof safeUpdateQaqcActionButtons === 'function') safeUpdateQaqcActionButtons();
       else if (typeof updateQaqcActionButtons === 'function') updateQaqcActionButtons();
 
-       // Refresh data in background; do not block success popup on this heavy call.
-      // Capture the moved Device_ID/Test_ID pairs so we can blank their location after refresh.
-      const movedPairs = req.map(r => ({ Device_ID: r.Device_ID, Test_ID: r.Test_ID }));
-      google.script.run.withSuccessHandler(function(data) {
-        if (data?.rgbData) window.rgbData = rgbData = data.rgbData;
-        if (data?.qcData)  window.qcData  = qcData  = data.qcData;
-
-        // Gap 4: blank Place/GPS/State for rows that just moved back to RGB
-        // (the row is "fresh" — location must be re-entered in the RGB module)
-        (window.rgbData || []).forEach(function(r) {
-          const did = String(r.Device_ID ?? r.did ?? '');
-          const tid = String(r.Test_ID   ?? r.tid ?? '');
-          if (movedPairs.some(function(p) { return p.Device_ID === did && p.Test_ID === tid; })) {
-            r.Place = ''; r.place = '';
-            r.GPS   = ''; r.gps   = '';
-            r.State = ''; r.state = '';
-          }
-        });
-        // Persist the clearing to the RGB_Data sheet
-        if (typeof google !== 'undefined' && google.script && google.script.run) {
-          google.script.run.clearRGBLocationBatch(movedPairs);
-        }
-
-        renderTable('rgb');
-        renderTable('qaqc');
-
-      }).getOperationalData();
+      // Immediate re-render — no second GAS round-trip
+      renderTable('rgb');
+      renderTable('qaqc');
     })
     .withFailureHandler(function(err) {
       window.__moveBusy = false;
+      if (moveBtn) moveBtn.disabled = false;
+      const bar = document.getElementById('qaqc-progress-bar');
+      if (bar) bar.style.display = 'none';
       showToast('Move failed: ' + (err?.message || err), 'error', 6000);
     })
     .syncMoveDataToRGB(req);
