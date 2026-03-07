@@ -6078,6 +6078,29 @@
       outline-offset: -2px;
     }
 
+    /* Parameter badge strip (Item 2) */
+    #qaqc-param-badges .qc-param-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: opacity .15s;
+    }
+    #qaqc-param-badges .qc-param-badge.badge-pass {
+      background: #d4edda; color: #155724; border-color: #c3e6cb;
+    }
+    #qaqc-param-badges .qc-param-badge.badge-fail {
+      background: #f8d7da; color: #721c24; border-color: #f5c6cb;
+    }
+    #qaqc-param-badges .qc-param-badge.badge-active {
+      outline: 2px solid #555;
+    }
+
 
 
     /* Histogram legend + hint */
@@ -7963,6 +7986,14 @@
                       </div>
 
                       <div class="qaqc-status-controls-right">
+                        <button id="btn-qc-go-failed" class="btn btn-outline" disabled
+                            onclick="jumpToFirstFailedParam()"
+                            title="Scroll to the first FAIL row and update histogram">⬇ Go to failed</button>
+
+                        <button id="btn-qc-copy" class="btn btn-outline" disabled
+                            onclick="copyQcSummaryToClipboard()"
+                            title="Copy QC summary to clipboard">📋 Copy</button>
+
                         <button id="btn-qc-export-pdf" class="btn btn-outline"
                             onclick="exportQCCertificatePDF()" disabled
                             title="Export QC Certificate (PDF)">Export PDF</button>
@@ -7977,6 +8008,7 @@
               </div>
 
               <div class="qaqc-table-scroll">
+                <div id="qaqc-param-badges" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0 6px 0;"></div>
                 <table id="tbl-qaqc-status">
                   <thead>
                     <tr>
@@ -8006,6 +8038,10 @@
                 <div class="qaqc-hist-actions">
                   <select id="qaqc-hist-param" class="search-input"
                       title="QC Parameter" onchange="onQCHistParamChange()"></select>
+
+                  <button id="btn-qc-hist-log" type="button" class="btn btn-outline"
+                      onclick="toggleQcHistLogScale()"
+                      title="Toggle logarithmic Y axis">Log Y</button>
 
                   <button type="button" class="btn btn-teal"
                       onclick="requestQcDiagnostics(window.currentQCRowForCert)">
@@ -18716,6 +18752,9 @@ function renderQCStatus(row) {
     return null;
   }
 
+    // Collect param statuses for badge row (Enhancement 2)
+  const _qcParamStatuses = [];
+
   (Array.isArray(cols) ? cols : []).forEach(c => {
     if (!c || !c.k) return;
 
@@ -18739,7 +18778,13 @@ function renderQCStatus(row) {
     if (status === 'PASS') passCount++;
     else failCount++;
 
-    // Build fail tooltip (attribute-safe)
+    // Collect for badge row (Enhancement 2)
+    _qcParamStatuses.push({
+      key: c.k,
+      label: c.n || c.k,
+      status: status,
+      value: Number.isFinite(val) ? val.toFixed(3) : 'NA'
+    });
     let tip = '';
     if (criteria && Number.isFinite(val)) {
       if (status === 'FAIL') {
@@ -18800,6 +18845,11 @@ function renderQCStatus(row) {
 
     tbody.appendChild(tr);
   });
+
+  // Render parameter badge row (Enhancement 2)
+  if (typeof renderQcParamBadges === 'function') {
+    renderQcParamBadges(_qcParamStatuses);
+  }
 
   // Render the summary strip
   const sumEl = document.getElementById('qaqc-status-summary');
@@ -18944,8 +18994,12 @@ function renderQCStatus(row) {
   // Ensure export buttons are visible + enabled when a row is loaded
   const b1 = document.getElementById('btn-qc-export-pdf');
   const b2 = document.getElementById('btn-qc-export-csv');
+  const b3 = document.getElementById('btn-qc-go-failed');
+  const b4 = document.getElementById('btn-qc-copy');
   if (b1) b1.disabled = false;
   if (b2) b2.disabled = false;
+  if (b3) b3.disabled = false;
+  if (b4) b4.disabled = false;
 }
 
 function updateQCHistogram(paramKey, selectedVal, batchId) {
@@ -19150,6 +19204,20 @@ function updateQCHistogram(paramKey, selectedVal, batchId) {
   // =====================
   // Chart.js render
   // =====================
+  // Gather criteria bounds for band shading (Enhancement 1)
+  let critMin = null, critMax = null;
+  try {
+    const crit = getQCCriteriaForParam(paramKey, targetBatch);
+    if (crit && Number.isFinite(Number(crit.min))) critMin = Number(crit.min);
+    if (crit && Number.isFinite(Number(crit.max))) critMax = Number(crit.max);
+  } catch (e) {}
+
+  // Log Y scale support (Enhancement 12)
+  const useLogY = !!(window.qcHistLogScale);
+  const yAxisCfg = useLogY
+    ? { type: 'logarithmic', min: 0.1, title: { display: true, text: 'Count (log)' } }
+    : { beginAtZero: true, title: { display: true, text: 'Count' } };
+
   chartObjs.qcHist = new Chart(ctx, {
     data: {
       datasets: [
@@ -19191,10 +19259,7 @@ function updateQCHistogram(paramKey, selectedVal, batchId) {
           min: xMin,
           max: xMax
         },
-        y: {
-          beginAtZero: true,
-          title: { display: true, text: 'Count' }
-        }
+        y: yAxisCfg
       },
       plugins: {
         legend: { display: false },
@@ -19213,10 +19278,14 @@ function updateQCHistogram(paramKey, selectedVal, batchId) {
           colors: vColors,
           widths: vWidths,
           dashes: vDashes
+        },
+        qcPassFailBandPlugin: {
+          min: critMin,
+          max: critMax
         }
       }
     },
-    plugins: [verticalLinesPlugin]
+    plugins: [verticalLinesPlugin, qcPassFailBandPlugin]
   });
 }
 
@@ -34788,6 +34857,212 @@ function buildQCCertificateData(row) {
     totalParams: passCount + failCount + naCount,
     paramRows
   };
+}
+
+// ====================================================
+// QC Status View – Enhancement 1: PASS/FAIL zone shading
+// ====================================================
+const qcPassFailBandPlugin = {
+  id: 'qcPassFailBandPlugin',
+  beforeDraw(chart, args, opts) {
+    const { min: critMin, max: critMax } = opts || {};
+    if (!Number.isFinite(critMin) || !Number.isFinite(critMax)) return;
+    const xScale = chart.scales.x;
+    const ca = chart.chartArea;
+    if (!xScale || !ca) return;
+    const ctx = chart.ctx;
+    ctx.save();
+    const xLeft  = ca.left;
+    const xRight = ca.right;
+    const height = ca.bottom - ca.top;
+    const pxMin = xScale.getPixelForValue(critMin);
+    const pxMax = xScale.getPixelForValue(critMax);
+    // FAIL zone: left of critMin
+    if (pxMin > xLeft) {
+      ctx.fillStyle = 'rgba(231,76,60,0.12)';
+      ctx.fillRect(xLeft, ca.top, Math.min(pxMin, xRight) - xLeft, height);
+    }
+    // PASS zone: between critMin and critMax
+    const pxPassL = Math.max(pxMin, xLeft);
+    const pxPassR = Math.min(pxMax, xRight);
+    if (pxPassR > pxPassL) {
+      ctx.fillStyle = 'rgba(46,204,113,0.12)';
+      ctx.fillRect(pxPassL, ca.top, pxPassR - pxPassL, height);
+    }
+    // FAIL zone: right of critMax
+    if (pxMax < xRight) {
+      ctx.fillStyle = 'rgba(231,76,60,0.12)';
+      ctx.fillRect(Math.max(pxMax, xLeft), ca.top, xRight - Math.max(pxMax, xLeft), height);
+    }
+    // Draw thin dashed boundary lines at critMin and critMax
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    [pxMin, pxMax].forEach(px => {
+      if (px >= xLeft && px <= xRight) {
+        ctx.beginPath();
+        ctx.moveTo(px, ca.top);
+        ctx.lineTo(px, ca.bottom);
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+};
+
+// ====================================================
+// QC Status View – Enhancement 2: Parameter badge row
+// ====================================================
+function renderQcParamBadges(paramStatuses) {
+  const wrap = document.getElementById('qaqc-param-badges');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  (paramStatuses || []).forEach(ps => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'qc-param-badge ' + (ps.status === 'FAIL' ? 'badge-fail' : 'badge-pass');
+    btn.textContent = (ps.status === 'FAIL' ? '🔴 ' : '🟢 ') + (ps.label || ps.key);
+    btn.title = `${ps.label || ps.key}: ${ps.status}${ps.value !== undefined ? ' (val: ' + ps.value + ')' : ''}`;
+    btn.dataset.paramKey = ps.key;
+    btn.onclick = function () {
+      // Remove active from all badges
+      wrap.querySelectorAll('.qc-param-badge').forEach(b => b.classList.remove('badge-active'));
+      btn.classList.add('badge-active');
+      // Click the corresponding table row
+      const tbody = document.getElementById('body-qaqc-status');
+      if (tbody) {
+        const rows = tbody.querySelectorAll('tr');
+        rows.forEach(r => r.classList.remove('row-active'));
+        const target = Array.from(rows).find(r => r.dataset.paramKey === ps.key);
+        if (target) {
+          target.classList.add('row-active');
+          target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          target.click();
+        }
+      }
+    };
+    wrap.appendChild(btn);
+  });
+}
+
+// ====================================================
+// QC Status View – Enhancement 6: Jump to first FAIL
+// ====================================================
+function jumpToFirstFailedParam() {
+  const tbody = document.getElementById('body-qaqc-status');
+  if (!tbody) return;
+  const failRow = tbody.querySelector('tr.is-fail');
+  if (!failRow) {
+    if (typeof showToast === 'function') showToast('No FAIL parameters in current view.', 'info');
+    return;
+  }
+  tbody.querySelectorAll('tr').forEach(r => r.classList.remove('row-active'));
+  failRow.classList.add('row-active');
+  failRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  failRow.click();
+  // Also update the badge row active state
+  const wrap = document.getElementById('qaqc-param-badges');
+  if (wrap && failRow.dataset.paramKey) {
+    wrap.querySelectorAll('.qc-param-badge').forEach(b => b.classList.remove('badge-active'));
+    const badge = wrap.querySelector(`.qc-param-badge[data-param-key="${failRow.dataset.paramKey}"]`);
+    if (badge) badge.classList.add('badge-active');
+  }
+}
+
+// ====================================================
+// QC Status View – Enhancement 9: Keyboard ← / → navigation
+// ====================================================
+(function _installQcStatusKeyNav() {
+  document.addEventListener('keydown', function _qcStatusKeyNav(e) {
+    // Only active when QC Status tab is visible
+    const panel = document.getElementById('tab-qaqc-status');
+    if (!panel || panel.style.display === 'none') return;
+    const tagName = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName)) return;
+    if (e.key === 'ArrowLeft' || e.key === '[') {
+      e.preventDefault();
+      navigateQcStatusTest(-1);
+    } else if (e.key === 'ArrowRight' || e.key === ']') {
+      e.preventDefault();
+      navigateQcStatusTest(1);
+    }
+  });
+})();
+
+function navigateQcStatusTest(dir) {
+  const sel = document.getElementById('qaqc-status-test');
+  if (!sel || sel.options.length < 2) return;
+  const cur = sel.selectedIndex;
+  const next = cur + dir;
+  if (next < 0 || next >= sel.options.length) return;
+  sel.selectedIndex = next;
+  if (typeof onQaqcStatusTestChange === 'function') onQaqcStatusTestChange();
+}
+
+// ====================================================
+// QC Status View – Enhancement 11: Copy-to-clipboard
+// ====================================================
+function copyQcSummaryToClipboard() {
+  const row = window.currentQCRowForCert;
+  if (!row) { if (typeof showToast === 'function') showToast('No QC row selected.', 'warning'); return; }
+  try {
+    const batchId = (typeof getQCBatchIdFromRow === 'function' ? getQCBatchIdFromRow(row) : null) || (window.currentQCBatchId || 'Default');
+    const did = row.did || row.Device_ID || '';
+    const tid = row.tid || row.Test_ID || '';
+    const lines = [`Device: ${did} | Test: ${tid} | Batch: ${batchId}`];
+    // Overall
+    const summEl = document.getElementById('qaqc-status-summary');
+    const overallPill = summEl && summEl.querySelector('.overall-pill');
+    if (overallPill) lines.push('Overall: ' + overallPill.textContent.replace('Overall: ', ''));
+    // Per-param
+    const tbody = document.getElementById('body-qaqc-status');
+    if (tbody) {
+      Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+        const cells = tr.querySelectorAll('td');
+        if (cells.length >= 3) {
+          const param = cells[0].textContent.trim();
+          const status = cells[1].textContent.trim();
+          const val = cells[2].textContent.trim();
+          lines.push(`  ${param}: ${status} (val: ${val})`);
+        }
+      });
+    }
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      if (typeof showToast === 'function') showToast('QC summary copied to clipboard.', 'success');
+    }).catch(() => {
+      if (typeof showToast === 'function') showToast('Copy failed — check browser permissions.', 'warning');
+    });
+  } catch (e) {
+    console.error('copyQcSummaryToClipboard error:', e);
+  }
+}
+
+// ====================================================
+// QC Status View – Enhancement 12: Log Y scale toggle
+// ====================================================
+window.qcHistLogScale = false;
+
+function toggleQcHistLogScale() {
+  window.qcHistLogScale = !window.qcHistLogScale;
+  const btn = document.getElementById('btn-qc-hist-log');
+  if (btn) {
+    btn.classList.toggle('btn-outline', !window.qcHistLogScale);
+    btn.classList.toggle('btn-teal', window.qcHistLogScale);
+  }
+  // Redraw histogram with current params
+  if (typeof updateQCHistogram === 'function' && window.currentQCParamKey) {
+    const batchId = window.currentQCBatchId || 'Default';
+    const currentRow = window.currentQCRowForCert;
+    const val = (currentRow && typeof getQCObservedValue === 'function')
+      ? getQCObservedValue(currentRow, window.currentQCParamKey)
+      : null;
+    updateQCHistogram(
+      window.currentQCParamKey,
+      Number.isFinite(val) ? val : null,
+      batchId
+    );
+  }
 }
 
 
