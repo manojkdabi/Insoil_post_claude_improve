@@ -22066,7 +22066,25 @@ if (typeof safeUpdateQaqcActionButtons === "function") safeUpdateQaqcActionButto
       }).getOperationalData();
     })
     .withFailureHandler(function(err) {
-      showToast('Move failed: ' + (err?.message || err), 'error', 6000);
+      const msg = String(err?.message || err || '');
+      if (msg.toLowerCase().indexOf('not registered') !== -1 || msg.toLowerCase().indexOf('access denied') !== -1) {
+        // Auto-register the current user then retry
+        google.script.run
+          .withSuccessHandler(function(reg) {
+            if (reg && reg.ok) {
+              showToast('✅ Account registered' + (reg.already ? ' (already existed)' : '') + '. Retrying Move to QC…', 'success', 3000);
+              setTimeout(function() { moveDataToQC(); }, 1500);
+            } else {
+              showToast('Move failed: ' + msg + '\n\nTo fix: open the Apps Script editor and run registerCurrentUser_() once.', 'error', 10000);
+            }
+          })
+          .withFailureHandler(function() {
+            showToast('Move failed: ' + msg + '\n\nTo fix: open the Apps Script editor and run registerCurrentUser_() once.', 'error', 10000);
+          })
+          .registerCurrentUser_();
+      } else {
+        showToast('Move failed: ' + msg, 'error', 6000);
+      }
     })
     .syncMoveDataToQC(req);
 }

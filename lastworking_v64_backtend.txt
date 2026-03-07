@@ -8765,9 +8765,10 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
 
     let updated = 0;
 
-    // 1. Update RGB_Data sheet
+    // 1. Update RGB_Data sheet — ensure columns exist first
     const rgbSheet = ss.getSheetByName('RGB_Data');
     if (rgbSheet) {
+      ensureLocationColumns_(rgbSheet);
       const rgbUpdated = updateSheetLocation_(rgbSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (rgbUpdated) updated++;
     }
@@ -8775,6 +8776,7 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
     // 2. Propagate to QC_Data sheet (if row exists)
     const qcSheet = ss.getSheetByName('QC_Data');
     if (qcSheet) {
+      ensureLocationColumns_(qcSheet);
       const qcUpdated = updateSheetLocation_(qcSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (qcUpdated) updated++;
     }
@@ -8782,6 +8784,7 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
     // 3. Propagate to SoilTest_Results sheet (if row exists)
     const stSheet = ss.getSheetByName('SoilTest_Results');
     if (stSheet) {
+      ensureLocationColumns_(stSheet);
       const stUpdated = updateSheetLocation_(stSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (stUpdated) updated++;
     }
@@ -8791,12 +8794,106 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
     return {
       success: true,
       sheetsUpdated: updated,
-      message: `Updated location data in ${updated} sheet(s)`
+      message: 'Updated location data in ' + updated + ' sheet(s)'
     };
 
   } catch (e) {
     Logger.log('updateRGBLocationData_: Error: %s', e.message);
     return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Ensures the sheet has Place, GPS, State columns.
+ * If any are missing they are appended as new columns at the end of the header row.
+ * Safe to call on any sheet — no-ops if all columns already exist.
+ */
+function ensureLocationColumns_(sheet) {
+  if (!sheet) return;
+  try {
+    const lastCol = sheet.getLastColumn();
+    if (lastCol < 1) return;
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const upperHeaders = headers.map(function(h) { return String(h).trim().toUpperCase(); });
+
+    const LOCATION_COLS = { PLACE: 'Place', GPS: 'GPS', STATE: 'State' };
+    var nextCol = lastCol + 1;
+    Object.keys(LOCATION_COLS).forEach(function(key) {
+      if (upperHeaders.indexOf(key) === -1) {
+        sheet.getRange(1, nextCol).setValue(LOCATION_COLS[key]);
+        nextCol++;
+        Logger.log('ensureLocationColumns_: Added %s column to %s', LOCATION_COLS[key], sheet.getName());
+      }
+    });
+  } catch (e) {
+    Logger.log('ensureLocationColumns_ error: %s', e.message);
+  }
+}
+
+/**
+ * Self-registration function for the first-time setup or when the caller is the
+ * script owner but not yet in the Users sheet.
+ *
+ * Rules:
+ *  - If the Users sheet is empty (no data rows) → registers the caller as Admin.
+ *  - If the Users sheet has rows but the caller is not registered → only the script
+ *    owner (effective user / deployer) is allowed to self-register (as Admin).
+ *    Other callers receive an explanatory error message.
+ *  - Already-registered users are not modified.
+ *
+ * This function does NOT call requireRole_() so it is accessible to unregistered callers.
+ * It is safe because only the script owner can elevate themselves; all others are rejected.
+ */
+function registerCurrentUser_() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const callerEmail = (Session.getActiveUser().getEmail() || '').toLowerCase().trim();
+    if (!callerEmail) {
+      return { ok: false, error: 'Cannot determine your Google account email. Please sign in.' };
+    }
+
+    // Ensure Users sheet exists
+    let usersSheet = ss.getSheetByName('Users');
+    if (!usersSheet) {
+      usersSheet = ss.insertSheet('Users');
+      usersSheet.appendRow(['Name', 'Email', 'Department', 'Role', 'Status', 'Created']);
+      usersSheet.setFrozenRows(1);
+      Logger.log('registerCurrentUser_: Created Users sheet');
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    // data[0] = header row
+    for (var i = 1; i < data.length; i++) {
+      const rowEmail = String(data[i][1] || '').toLowerCase().trim();
+      if (rowEmail === callerEmail) {
+        return { ok: true, already: true, email: callerEmail, role: String(data[i][3] || '') };
+      }
+    }
+
+    // Caller is not registered — determine role
+    const hasAnyUsers = data.length > 1;
+    if (!hasAnyUsers) {
+      // First user ever → grant Admin
+    } else {
+      // Only allow script owner (effective user = deployer) to self-register
+      const ownerEmail = (Session.getEffectiveUser().getEmail() || '').toLowerCase().trim();
+      if (callerEmail !== ownerEmail) {
+        return {
+          ok: false,
+          error: 'Your account (' + callerEmail + ') is not registered. Please ask your administrator to add you to the Users sheet.'
+        };
+      }
+    }
+
+    const now = new Date();
+    const displayName = callerEmail.split('@')[0];
+    usersSheet.appendRow([displayName, callerEmail, 'Operations', 'admin', 'active', now.toISOString()]);
+    Logger.log('registerCurrentUser_: Registered %s as admin', callerEmail);
+    return { ok: true, registered: true, email: callerEmail, role: 'admin' };
+
+  } catch (e) {
+    Logger.log('registerCurrentUser_ error: %s', e.message);
+    return { ok: false, error: e.message };
   }
 }
 
