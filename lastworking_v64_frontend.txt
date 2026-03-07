@@ -2818,6 +2818,57 @@
     #rgb-retest-notes { resize: vertical; min-height: 60px; }
     #rgb-retest-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
 
+    /* ===== Feature 3: Metric Color Coding ===== */
+    .rgb-metric-low  { background-color: #fee2e2 !important; }
+    .rgb-metric-mid  { background-color: #dcfce7 !important; }
+    .rgb-metric-high { background-color: #fef3c7 !important; }
+
+    /* ===== Feature 5: Move Confirm Modal ===== */
+    #rgb-move-confirm-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(0,0,0,0.45);
+      align-items: center;
+      justify-content: center;
+    }
+    #rgb-move-confirm-modal.open { display: flex; }
+    #rgb-move-confirm-box {
+      background: #fff;
+      border-radius: 10px;
+      padding: 28px 32px;
+      width: 560px;
+      max-width: 95vw;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #rgb-move-confirm-box h3 { margin: 0; font-size: 17px; color: #1e293b; }
+    #rgb-move-confirm-box p  { margin: 0; font-size: 13px; color: #475569; }
+    #rgb-move-confirm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    #rgb-move-confirm-table th { background: #f1f5f9; padding: 4px 8px; text-align: left; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+    #rgb-move-confirm-table td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; }
+    #rgb-move-confirm-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+
+    /* ===== Feature 11: Column Visibility Panel ===== */
+    #rgb-col-vis-panel {
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 6px;
+      margin-top: 4px;
+    }
+    #rgb-col-vis-panel.active { display: flex; }
+    #rgb-col-vis-panel label { font-size: 12px; font-weight: 500; color: #166534; display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
+    #rgb-col-vis-panel input[type="checkbox"] { cursor: pointer; }
+
     /* Pre-QC status badge */
     .preqc-badge { font-size: 16px; cursor: default; }
 
@@ -7533,6 +7584,7 @@
             <button id="btn-rgb-move" class="btn btn-indigo" onclick="moveDataToQC()">Move to QC ➔ <span id="rgb-move-count"></span></button>
             <span id="rgb-sel-count"></span>
             <button class="btn btn-outline" onclick="toggleRgbBatchSidebar()" title="Toggle batch sidebar">☰ Batches</button>
+            <button class="btn btn-outline" onclick="toggleRgbColVisPanel()" title="Toggle column visibility">⊞ Columns</button>
           </div>
 
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
@@ -7551,6 +7603,8 @@
 
             <input type="text" id="search-rgb-dev" class="search-input" placeholder="Device ID" onkeyup="renderTable('rgb')">
             <input type="text" id="search-rgb-test" class="search-input" placeholder="Test ID" onkeyup="renderTable('rgb')">
+            <input type="text" id="search-rgb-global" class="search-input" placeholder="🔍 Search all columns..." onkeyup="renderTable('rgb')" style="width:180px;">
+            <button class="btn btn-outline" onclick="toggleRgbColorCoding()" id="btn-rgb-color" title="Toggle metric color coding">🎨 Color</button>
 
             <button class="btn btn-teal" onclick="document.getElementById('csvImport').click()">Import CSV</button>
             <button class="btn btn-outline" onclick="toggleRgbFilterBuilder()" title="Advanced filter builder">⚙ Filters</button>
@@ -7611,6 +7665,10 @@
             <input type="text" id="rgb-af-val" placeholder="value..." style="width:130px;">
             <button class="btn btn-sm btn-teal" onclick="applyRgbAdvancedFilter()">Apply</button>
             <button class="btn btn-sm btn-outline" onclick="clearRgbAdvancedFilter()">Clear</button>
+          </div>
+
+          <div id="rgb-col-vis-panel">
+            <!-- populated by renderRgbColVisPanel() -->
           </div>
 
           <input type="file" id="csvImport" accept=".csv" style="display:none;" onchange="client_ImportCSV_CreateRGBData(this)">
@@ -17064,6 +17122,20 @@ function renderTable(tab) {
     });
   }
 
+  // Global search filter (Feature 12) - only for RGB
+  if (isRGB) {
+    const globalSearch = (document.getElementById('search-rgb-global')?.value || '').trim().toLowerCase();
+    if (globalSearch) {
+      filtered = filtered.filter(function(row) {
+        const fields = [
+          row.Device_ID, row.Test_ID, row.Client_ID, row.Farm_ID,
+          row.ProdBatch_ID, row.QCBatch_ID, row.Place, row.State, row.Crop
+        ];
+        return fields.some(function(f) { return f && String(f).toLowerCase().includes(globalSearch); });
+      });
+    }
+  }
+
   // -------------------------------
   // SORT (R3)
   // -------------------------------
@@ -17120,23 +17192,52 @@ function renderTable(tab) {
   const sh = (col, label) =>
     `<th class="rgb-th-sortable" onclick="sortRgbTable('${tab}','${col}')" title="Sort by ${label}">${label}${si(col)}</th>`;
 
+  // Column visibility (Feature 11) - only for RGB
+  const hiddenCols = (isRGB && window.rgbHiddenCols instanceof Set) ? window.rgbHiddenCols : new Set();
+  const shv = (col, label) => {
+    if (hiddenCols.has(col)) return '';
+    return sh(col, label);
+  };
+
+  // Metric column stats for tooltips (Feature 9) - only for RGB
+  const metricStats = {};
+  if (isRGB && pageData.length && Array.isArray(METRIC_COLS_FLAT)) {
+    METRIC_COLS_FLAT.forEach(function(c) {
+      const vals = pageData.map(function(row) { return toNum(getMetricVal(row, c.k)); }).filter(function(v) { return v !== null; });
+      if (vals.length) {
+        const mn = Math.min.apply(null, vals);
+        const mx = Math.max.apply(null, vals);
+        const avg = vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
+        metricStats[c.k] = { min: mn, max: mx, avg: avg, count: vals.length };
+      }
+    });
+  }
+
   const metricHeads = (Array.isArray(METRIC_COLS_FLAT) ? METRIC_COLS_FLAT : [])
-    .map(c => sh(c.k, c.label)).join("");
+    .filter(c => !hiddenCols.has(c.k))
+    .map(function(c) {
+      let title = 'Sort by ' + c.label;
+      if (isRGB && metricStats[c.k]) {
+        const s = metricStats[c.k];
+        title = 'Min: ' + s.min.toFixed(2) + ' | Avg: ' + s.avg.toFixed(2) + ' | Max: ' + s.max.toFixed(2) + ' | Count: ' + s.count;
+      }
+      return '<th class="rgb-th-sortable" onclick="sortRgbTable(\'' + tab + '\',\'' + c.k + '\')" title="' + title + '">' + c.label + si(c.k) + '</th>';
+    }).join("");
 
   thead.innerHTML = `<tr>
     <th><input type="checkbox" id="${tab}-select-all-cb" title="Select / deselect all on this page" onclick="toggleRgbSelectAll(this,'${tab}')"></th>
     ${isRGB ? '<th title="Pre-QC Status">Status</th>' : ''}
-    ${sh('Client_ID', 'Client_ID')}
-    ${sh('Farm_ID', 'Farm_ID')}
-    ${sh('ProdBatch_ID', 'ProdBatch_ID')}
-    ${sh('QCBatch_ID', 'QCBatch_ID')}
-    ${sh('Device_ID', 'Device_ID')}
-    ${sh('Test_ID', 'Test_ID')}
-    ${sh('Crop', 'Crop')}
-    ${sh('Test_date', 'Test_date')}
-    ${sh('Place', 'Place')}
-    <th>GPS</th>
-    ${sh('State', 'State')}
+    ${shv('Client_ID', 'Client_ID')}
+    ${shv('Farm_ID', 'Farm_ID')}
+    ${shv('ProdBatch_ID', 'ProdBatch_ID')}
+    ${shv('QCBatch_ID', 'QCBatch_ID')}
+    ${shv('Device_ID', 'Device_ID')}
+    ${shv('Test_ID', 'Test_ID')}
+    ${shv('Crop', 'Crop')}
+    ${shv('Test_date', 'Test_date')}
+    ${shv('Place', 'Place')}
+    ${hiddenCols.has('GPS') ? '' : '<th>GPS</th>'}
+    ${shv('State', 'State')}
     ${metricHeads}
   </tr>`;
 
@@ -17145,7 +17246,16 @@ function renderTable(tab) {
   // -------------------------------
   tbody.innerHTML = "";
 
-  const totalCols = (isRGB ? 13 : 12) + ((METRIC_COLS_FLAT && METRIC_COLS_FLAT.length) ? METRIC_COLS_FLAT.length : 0);
+  // Compute totalCols accounting for hidden columns (Feature 11)
+  let totalCols;
+  if (isRGB) {
+    const textColKeys = ['Client_ID','Farm_ID','ProdBatch_ID','QCBatch_ID','Device_ID','Test_ID','Crop','Test_date','Place','GPS','State'];
+    const visibleText = textColKeys.filter(k => !hiddenCols.has(k)).length;
+    const visibleMetric = (METRIC_COLS_FLAT || []).filter(c => !hiddenCols.has(c.k)).length;
+    totalCols = 2 + visibleText + visibleMetric; // 2 = checkbox + status badge
+  } else {
+    totalCols = 12 + ((METRIC_COLS_FLAT && METRIC_COLS_FLAT.length) ? METRIC_COLS_FLAT.length : 0);
+  }
 
   if (!pageData.length) {
     const isFiltered = !!(searchDev || searchTest || dateFrom || dateTo);
@@ -17219,10 +17329,11 @@ function renderTable(tab) {
     }
 
     // 2) Client/Farm
-    tr.insertCell().innerText = normStr(row.Client_ID ?? row.client_id ?? row.clientId);
-    tr.insertCell().innerText = normStr(row.Farm_ID ?? row.farm_id ?? row.farmId);
+    if (!hiddenCols.has('Client_ID')) tr.insertCell().innerText = normStr(row.Client_ID ?? row.client_id ?? row.clientId);
+    if (!hiddenCols.has('Farm_ID')) tr.insertCell().innerText = normStr(row.Farm_ID ?? row.farm_id ?? row.farmId);
 
     // 3) ProdBatch_ID cell
+    if (!hiddenCols.has('ProdBatch_ID')) {
     const tdProd = tr.insertCell();
     const curProdVal = normStr(row.ProdBatch_ID ?? row.prodbatch_id ?? row.prodBatchId) || "Default";
 
@@ -17250,8 +17361,10 @@ function renderTable(tab) {
     } else {
       tdProd.innerText = curProdVal;
     }
+    } // end if (!hiddenCols.has('ProdBatch_ID'))
 
     // 4) QCBatch_ID cell
+    if (!hiddenCols.has('QCBatch_ID')) {
     const tdQCBatch = tr.insertCell();
     const curBatchVal = normStr(row.QCBatch_ID ?? row.qcbatch_id ?? row.qcBatchId) || "Default";
 
@@ -17297,18 +17410,20 @@ function renderTable(tab) {
         tdQCBatch.innerText = curBatchVal;
       }
     }
+    } // end if (!hiddenCols.has('QCBatch_ID'))
 
     // 5) Device/Test/Date
-    tr.insertCell().innerText = normStr(row.Device_ID ?? row.did);
-    tr.insertCell().innerText = normStr(row.Test_ID ?? row.tid);
-    tr.insertCell().innerText = normStr(row.crop ?? row.Crop ?? row.CropID);
-    tr.insertCell().innerText = (typeof formatDateCell === "function")
+    if (!hiddenCols.has('Device_ID')) tr.insertCell().innerText = normStr(row.Device_ID ?? row.did);
+    if (!hiddenCols.has('Test_ID')) tr.insertCell().innerText = normStr(row.Test_ID ?? row.tid);
+    if (!hiddenCols.has('Crop')) tr.insertCell().innerText = normStr(row.crop ?? row.Crop ?? row.CropID);
+    if (!hiddenCols.has('Test_date')) tr.insertCell().innerText = (typeof formatDateCell === "function")
       ? formatDateCell(row.Test_date ?? row.time ?? "")
       : normStr(row.Test_date ?? row.time ?? "");
 
     // 5a) Place, GPS, State - EDITABLE only in RGB Quarantined Data (source of truth)
     //     In QAQC mode these are read-only mirrors of the RGB_Data values
     // Place cell with autocomplete search (RGB) or read-only mirror (QAQC)
+    if (!hiddenCols.has('Place')) {
     const tdPlace = tr.insertCell();
     const placeInput = document.createElement('input');
     placeInput.type = 'text';
@@ -17356,8 +17471,10 @@ function renderTable(tab) {
       });
       tdPlace.appendChild(saveLocBtn);
     }
+    } // end if (!hiddenCols.has('Place'))
 
     // GPS cell - editable in RGB, read-only mirror in QAQC
+    if (!hiddenCols.has('GPS')) {
     const tdGPS = tr.insertCell();
     const gpsInput = document.createElement('input');
     gpsInput.type = 'text';
@@ -17367,8 +17484,10 @@ function renderTable(tab) {
     gpsInput.dataset.rowId = normStr(row.id ?? "");
     if (!isRGB) { gpsInput.readOnly = true; gpsInput.disabled = true; }
     tdGPS.appendChild(gpsInput);
+    } // end if (!hiddenCols.has('GPS'))
 
     // State cell - read-only (greyed)
+    if (!hiddenCols.has('State')) {
     const tdState = tr.insertCell();
     const stateInput = document.createElement('input');
     stateInput.type = 'text';
@@ -17379,15 +17498,23 @@ function renderTable(tab) {
     stateInput.disabled = true;
     stateInput.dataset.rowId = normStr(row.id ?? "");
     tdState.appendChild(stateInput);
+    } // end if (!hiddenCols.has('State'))
 
     // 6) Metrics
     (METRIC_COLS_FLAT || []).forEach(c => {
+      if (hiddenCols.has(c.k)) return;
       const td = tr.insertCell();
       const v = getMetricVal(row, c.k);
       const n = toNum(v);
       td.innerText = (n == null)
         ? (v === null || v === undefined ? "" : String(v))
         : fmt2(n);
+      // Feature 3: color coding
+      if (isRGB && window.rgbColorCoding && typeof getRgbMetricColor === 'function' && n !== null) {
+        const allVals = pageData.map(function(r) { return toNum(getMetricVal(r, c.k)); }).filter(function(x) { return x !== null; });
+        const bg = getRgbMetricColor(c.k, n, allVals);
+        if (bg) td.style.backgroundColor = bg;
+      }
     });
 
     tbody.appendChild(tr);
@@ -22382,9 +22509,10 @@ function moveDataToQC() {
     ? `QC Batch: ${uniqueBatches[0]}`
     : `QC Batches: ${uniqueBatches.length} (mixed)`;
 
-  const ok = confirm(`Want to move ${req.length} RGB/Abs row(s) to Device QA/QC?\n${batchMsg}`);
-  if (!ok) return;
+  showMoveConfirmModal(req, req.length, batchMsg);
+}
 
+function executeMoveToQC(req, n) {
   // Show immediate progress feedback in the undo bar area
   const moveBtn = document.getElementById('btn-rgb-move');
   if (moveBtn) moveBtn.disabled = true;
@@ -22793,6 +22921,104 @@ function setMoveButtonState(btn, busy, textBusy, textNormal) {
   btn.textContent = busy ? textBusy : textNormal;
 }
 
+// ===== Feature 3: Inline Metric Range Coloring =====
+function getRgbMetricColor(key, value, allValues) {
+  if (!allValues || allValues.length === 0) return '';
+  const sorted = allValues.slice().sort(function(a, b) { return a - b; });
+  const p25 = sorted[Math.floor(sorted.length * 0.25)];
+  const p75 = sorted[Math.floor(sorted.length * 0.75)];
+  if (value <= p25) return '#fee2e2';
+  if (value >= p75) return '#fef3c7';
+  return '#dcfce7';
+}
+
+function toggleRgbColorCoding() {
+  window.rgbColorCoding = !window.rgbColorCoding;
+  const btn = document.getElementById('btn-rgb-color');
+  if (btn) btn.style.fontWeight = window.rgbColorCoding ? '700' : '';
+  if (typeof renderTable === 'function') renderTable('rgb');
+}
+
+// ===== Feature 5: Move Confirm Modal =====
+function showMoveConfirmModal(req, n, batchMsg) {
+  const modal = document.getElementById('rgb-move-confirm-modal');
+  if (!modal) { executeMoveToQC(req, n); return; }
+  const countEl = document.getElementById('rgb-move-confirm-count');
+  const batchEl = document.getElementById('rgb-move-confirm-batch');
+  const tbody   = document.getElementById('rgb-move-confirm-tbody');
+  if (countEl) countEl.textContent = n + ' row(s) selected for move to QA/QC';
+  if (batchEl) batchEl.textContent = batchMsg;
+  if (tbody) {
+    tbody.innerHTML = req.slice(0, 50).map(function(r) {
+      const status = (window.rgbData || []).find(function(row) {
+        return String(row.Device_ID ?? row.did ?? '') === r.Device_ID && String(row.Test_ID ?? row.tid ?? '') === r.Test_ID;
+      });
+      const preqc = status && typeof computePreQcStatus === 'function' ? computePreQcStatus(status) : '';
+      const badge = preqc === 'no_data' ? '🔴' : preqc === 'incomplete' ? '⚠️' : '🟢';
+      const crop = status ? (status.Crop || status.crop || '') : '';
+      return '<tr><td>' + (r.Device_ID || '') + '</td><td>' + (r.Test_ID || '') + '</td><td>' + crop + '</td><td>' + badge + '</td></tr>';
+    }).join('') + (req.length > 50 ? '<tr><td colspan="4" style="color:#6b7280;font-style:italic;">…and ' + (req.length - 50) + ' more rows</td></tr>' : '');
+  }
+  window.__pendingMoveReq = { req: req, n: n };
+  modal.classList.add('open');
+}
+
+function closeMoveConfirmModal() {
+  const modal = document.getElementById('rgb-move-confirm-modal');
+  if (modal) modal.classList.remove('open');
+  window.__pendingMoveReq = null;
+}
+
+function confirmMoveToQC() {
+  closeMoveConfirmModal();
+  if (window.__pendingMoveReq) {
+    executeMoveToQC(window.__pendingMoveReq.req, window.__pendingMoveReq.n);
+    window.__pendingMoveReq = null;
+  }
+}
+
+// ===== Feature 11: Column Visibility Toggle =====
+function toggleRgbColVisPanel() {
+  const panel = document.getElementById('rgb-col-vis-panel');
+  if (!panel) return;
+  panel.classList.toggle('active');
+  if (panel.classList.contains('active')) renderRgbColVisPanel();
+}
+
+function toggleRgbColVis(key) {
+  window.rgbHiddenCols = window.rgbHiddenCols instanceof Set ? window.rgbHiddenCols : new Set();
+  if (window.rgbHiddenCols.has(key)) {
+    window.rgbHiddenCols.delete(key);
+  } else {
+    window.rgbHiddenCols.add(key);
+  }
+  if (typeof renderTable === 'function') renderTable('rgb');
+}
+
+function renderRgbColVisPanel() {
+  const panel = document.getElementById('rgb-col-vis-panel');
+  if (!panel) return;
+  window.rgbHiddenCols = window.rgbHiddenCols instanceof Set ? window.rgbHiddenCols : new Set();
+  const textCols = [
+    { k: 'Client_ID', label: 'Client_ID' },
+    { k: 'Farm_ID', label: 'Farm_ID' },
+    { k: 'ProdBatch_ID', label: 'ProdBatch_ID' },
+    { k: 'QCBatch_ID', label: 'QCBatch_ID' },
+    { k: 'Device_ID', label: 'Device_ID' },
+    { k: 'Test_ID', label: 'Test_ID' },
+    { k: 'Crop', label: 'Crop' },
+    { k: 'Test_date', label: 'Test_date' },
+    { k: 'Place', label: 'Place' },
+    { k: 'GPS', label: 'GPS' },
+    { k: 'State', label: 'State' }
+  ];
+  const metricCols = Array.isArray(METRIC_COLS_FLAT) ? METRIC_COLS_FLAT : [];
+  const allCols = textCols.concat(metricCols.map(function(c) { return { k: c.k, label: c.label }; }));
+  panel.innerHTML = allCols.map(function(col) {
+    const checked = !window.rgbHiddenCols.has(col.k);
+    return '<label><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleRgbColVis(\'' + col.k.replace(/'/g, "\\'") + '\')">' + col.label + '</label>';
+  }).join('');
+}
 
 
 // --- TAB NAVIGATION LOGIC ---
@@ -35388,7 +35614,32 @@ function _dbSortDefaultFirst_(arr) {
     </div>
   </div>
 
-  <div id="rgb-retest-modal" role="dialog" aria-modal="true" aria-labelledby="rgb-retest-title">
+  <div id="rgb-move-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rgb-move-confirm-title">
+    <div id="rgb-move-confirm-box">
+      <h3 id="rgb-move-confirm-title">Move to QA/QC — Confirm</h3>
+      <p id="rgb-move-confirm-count"></p>
+      <p id="rgb-move-confirm-batch" style="font-weight:600; color:#4f46e5;"></p>
+      <div style="overflow-y:auto; max-height:280px;">
+        <table id="rgb-move-confirm-table">
+          <thead>
+            <tr>
+              <th>Device_ID</th>
+              <th>Test_ID</th>
+              <th>Crop</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="rgb-move-confirm-tbody"></tbody>
+        </table>
+      </div>
+      <div id="rgb-move-confirm-actions">
+        <button class="btn btn-outline" onclick="closeMoveConfirmModal()">Cancel</button>
+        <button class="btn btn-indigo" onclick="confirmMoveToQC()">✓ Confirm Move to QC</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rgb-retest-modal" role="dialog" aria-modal="true" aria-labelledby="rgb-retest-title">
     <div id="rgb-retest-modal-box">
       <h3 id="rgb-retest-title">Move to RGB/Abs — Mark for Retest</h3>
       <p id="rgb-retest-count-msg">Moving 0 QA/QC row(s) back to RGB/Abs.</p>
