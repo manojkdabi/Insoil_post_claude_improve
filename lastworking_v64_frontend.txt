@@ -22977,10 +22977,10 @@ function closeMoveConfirmModal() {
 }
 
 function confirmMoveToQC() {
+  const pending = window.__pendingMoveReq;
   closeMoveConfirmModal();
-  if (window.__pendingMoveReq) {
-    executeMoveToQC(window.__pendingMoveReq.req, window.__pendingMoveReq.n);
-    window.__pendingMoveReq = null;
+  if (pending) {
+    executeMoveToQC(pending.req, pending.n);
   }
 }
 
