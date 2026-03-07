@@ -2009,8 +2009,19 @@ function syncMoveDataToQC(reqRows) {
     // Format Test_date display
     shDst.getRange(2, dDat + 1, Math.max(0, shDst.getLastRow() - 1), 1).setNumberFormat("yyyy-mm-dd | HH:mm");
 
-    // CUT from RGB_Data (reverse-order delete is correct GAS pattern for non-contiguous rows)
-    deleteRows.sort((a, b) => b - a).forEach(rn => shSrc.deleteRow(rn));
+    // CUT from RGB_Data — batch overwrite (much faster than O(N) deleteRow calls)
+    if (deleteRows.length > 0) {
+      const deleteSet = new Set(deleteRows);
+      // srcVals[0] is the header; srcVals[i] corresponds to sheet row i+1
+      const remainingData = srcVals.slice(1).filter((_, i) => !deleteSet.has(i + 2));
+      const oldDataRows = srcVals.length - 1;
+      if (oldDataRows > 0) {
+        shSrc.getRange(2, 1, oldDataRows, srcHdr.length).clearContent();
+      }
+      if (remainingData.length > 0) {
+        shSrc.getRange(2, 1, remainingData.length, srcHdr.length).setValues(remainingData);
+      }
+    }
 
     return { ok: true, moved, updated, removed: deleteRows.length, skipped };
 
@@ -2197,8 +2208,18 @@ function syncMoveDataToRGB(reqRows) {
     // Format Test_date display
     shDst.getRange(2, dDat + 1, Math.max(0, shDst.getLastRow() - 1), 1).setNumberFormat("yyyy-mm-dd | HH:mm");
 
-    // CUT from QC_Data (reverse-order delete is correct GAS pattern for non-contiguous rows)
-    deleteRows.sort((a, b) => b - a).forEach(rn => shSrc.deleteRow(rn));
+    // CUT from QC_Data — batch overwrite (much faster than O(N) deleteRow calls)
+    if (deleteRows.length > 0) {
+      const deleteSet = new Set(deleteRows);
+      const remainingData = srcVals.slice(1).filter((_, i) => !deleteSet.has(i + 2));
+      const oldDataRows = srcVals.length - 1;
+      if (oldDataRows > 0) {
+        shSrc.getRange(2, 1, oldDataRows, srcHdr.length).clearContent();
+      }
+      if (remainingData.length > 0) {
+        shSrc.getRange(2, 1, remainingData.length, srcHdr.length).setValues(remainingData);
+      }
+    }
 
     appendDataAudit_('sync_to_qc', 'QC_Data', moved + updated, 'moved=' + moved + ' updated=' + updated + ' skipped=' + skipped);
     return { ok: true, moved, updated, removed: deleteRows.length, skipped };

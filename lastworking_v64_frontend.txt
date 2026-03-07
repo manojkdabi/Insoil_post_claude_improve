@@ -6799,6 +6799,27 @@
   min-width: 150px;
 }
 
+/* Save Location button (per-row, RGB Quarantined Data only) */
+.btn-save-location {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #e0e7ff;
+  border: 1px solid #a5b4fc;
+  border-radius: 4px;
+  color: #3730a3;
+  text-align: center;
+  transition: background 0.2s;
+}
+.btn-save-location:hover:not(:disabled) { background: #c7d2fe; }
+.btn-save-location:disabled { cursor: not-allowed; opacity: 0.7; }
+.btn-save-location.saved { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+.btn-save-location.error { background: #fef3c7; border-color: #fbbf24; color: #92400e; }
+
 
 
     /* =====================================================================
@@ -17037,6 +17058,35 @@ function renderTable(tab) {
     if (!isRGB) { placeInput.readOnly = true; placeInput.disabled = true; }
     tdPlace.appendChild(placeInput);
 
+    // 💾 Save Location button — only in RGB Quarantined Data (the source of truth)
+    // Auto-save is unreliable; explicit save gives stable, auditable writes to the sheet.
+    if (isRGB) {
+      const saveLocBtn = document.createElement('button');
+      saveLocBtn.type = 'button';
+      saveLocBtn.className = 'btn-save-location';
+      saveLocBtn.textContent = '\uD83D\uDCBE Save';
+      saveLocBtn.title = 'Save Place/GPS/State to sheet';
+      saveLocBtn.dataset.deviceId = normStr(row.Device_ID ?? row.did);
+      saveLocBtn.dataset.testId = normStr(row.Test_ID ?? row.tid);
+      saveLocBtn.addEventListener('click', function() {
+        const myTr = this.closest('tr');
+        if (!myTr) return;
+        // placeInput.value is always kept in sync with Geoapify's visible input
+        const pi = myTr.querySelector('.rgb-place-input');
+        const gi = myTr.querySelector('.rgb-gps-input');
+        const si = myTr.querySelector('.rgb-state-input-readonly');
+        const placeVal = pi ? pi.value : '';
+        const gpsVal   = gi ? gi.value : '';
+        const stateVal = si ? si.value : '';
+        if (!placeVal) {
+          if (typeof showToast === 'function') showToast('Please search and select a location first.', 'warning', 3000);
+          return;
+        }
+        saveRGBLocationData(this.dataset.deviceId, this.dataset.testId, placeVal, gpsVal, stateVal, this);
+      });
+      tdPlace.appendChild(saveLocBtn);
+    }
+
     // GPS cell - editable in RGB, read-only mirror in QAQC
     const tdGPS = tr.insertCell();
     const gpsInput = document.createElement('input');
@@ -24928,43 +24978,42 @@ function initRGBLocationAutocomplete(placeInput) {
 
         console.log('[RGB Location] Final values - Place=%s, GPS=%s, State=%s', placeText, gpsValue, stateInput?.value || '');
 
-        // Save to backend
-        const rowId = placeInput.dataset.rowId;
-        const deviceId = placeInput.dataset.deviceId;
-        const testId = placeInput.dataset.testId;
-        
-        if (deviceId && testId) {
-            saveRGBLocationData(deviceId, testId, placeText, gpsValue, stateInput?.value || '');
-        } else {
-            console.warn('[RGB Location] Cannot save - missing Device_ID or Test_ID');
+        // In-memory update so Raw RGB Data view stays consistent immediately.
+        // Actual sheet save is triggered by the 💾 Save button (explicit, per-row).
+        const _arr = (typeof rgbData !== 'undefined' && Array.isArray(rgbData)) ? rgbData : (window.rgbData || []);
+        const _did = placeInput.dataset.deviceId;
+        const _tid = placeInput.dataset.testId;
+        if (_did && _tid) {
+          _arr.forEach(function(r) {
+            if (String(r.Device_ID ?? r.did ?? '') === String(_did) && String(r.Test_ID ?? r.tid ?? '') === String(_tid)) {
+              r.Place = placeText; r.place = placeText;
+              r.GPS   = gpsValue;  r.gps   = gpsValue;
+              r.State = stateInput?.value || ''; r.state = stateInput?.value || '';
+            }
+          });
         }
     });
 
-    // Save on manual GPS edit
+    // GPS and Place blur handlers — keep values in sync in-memory but do NOT auto-save to sheet.
+    // User must click the 💾 Save button to persist to the sheet.
     if (gpsInput) {
         gpsInput.addEventListener('blur', () => {
-            const deviceId = placeInput.dataset.deviceId;
-            const testId = placeInput.dataset.testId;
-            if (deviceId && testId) {
-                saveRGBLocationData(deviceId, testId, placeInput.value, gpsInput.value, stateInput.value);
-            }
-        });
-    }
-
-    // Save on manual Place edit (without selection)
-    if (geoInput) {
-        geoInput.addEventListener('blur', () => {
-            const deviceId = placeInput.dataset.deviceId;
-            const testId = placeInput.dataset.testId;
-            if (deviceId && testId && geoInput.value) {
-                saveRGBLocationData(deviceId, testId, geoInput.value, gpsInput?.value || '', stateInput?.value || '');
+            const _did = placeInput.dataset.deviceId;
+            const _tid = placeInput.dataset.testId;
+            if (_did && _tid) {
+              const _arr = (typeof rgbData !== 'undefined' && Array.isArray(rgbData)) ? rgbData : (window.rgbData || []);
+              _arr.forEach(function(r) {
+                if (String(r.Device_ID ?? r.did ?? '') === String(_did) && String(r.Test_ID ?? r.tid ?? '') === String(_tid)) {
+                  r.GPS = gpsInput.value; r.gps = gpsInput.value;
+                }
+              });
             }
         });
     }
 }
 
 // Save RGB location data to backend
-function saveRGBLocationData(deviceId, testId, place, gps, state) {
+function saveRGBLocationData(deviceId, testId, place, gps, state, saveBtn) {
     if (!deviceId || !testId) {
         console.warn('Cannot save location data: missing Device_ID or Test_ID');
         return;
@@ -24976,10 +25025,6 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
     // Raw RGB Data panel reflects the new values even before (or if) the backend
     // call succeeds.  This prevents Place/GPS/State from disappearing when the
     // user toggles between the Calculated Metrics and Raw RGB Data views.
-    // NOTE: use the module-level `rgbData` let variable as the primary target —
-    // this is what renderTable() and renderRawSelection() both read from.
-    // Also patch window.rgbData (kept in sync after fetchOperationalDataOnce fix,
-    // but guarded here for safety in case they ever diverge).
     const _rgbArr = (typeof rgbData !== 'undefined' && Array.isArray(rgbData)) ? rgbData
                   : (window.rgbData || []);
     _rgbArr.forEach(function(r) {
@@ -24992,9 +25037,17 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
         }
     });
 
+    // Update save button to show progress
+    if (saveBtn) {
+        saveBtn.textContent = '\u23F3\u2026';
+        saveBtn.disabled = true;
+        saveBtn.className = 'btn-save-location';
+    }
+
     // Check if GAS client API is available
     if (!google || !google.script || !google.script.run) {
         console.warn('[RGB Location] google.script.run not available — running outside GAS context, skipping backend save.');
+        if (saveBtn) { saveBtn.textContent = '\uD83D\uDCBE Save'; saveBtn.disabled = false; }
         return;
     }
 
@@ -25004,11 +25057,29 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
                 const updated = result.sheetsUpdated || 0;
                 if (updated > 0) {
                     console.log('[RGB Location] ✅ Location saved to %d sheet(s)', updated);
+                    if (saveBtn) {
+                        saveBtn.textContent = '\u2705 Saved';
+                        saveBtn.className = 'btn-save-location saved';
+                        saveBtn.disabled = false;
+                        setTimeout(function() {
+                            saveBtn.textContent = '\uD83D\uDCBE Save';
+                            saveBtn.className = 'btn-save-location';
+                        }, 3000);
+                    }
                 } else {
                     // Row not found in any sheet — warn the user visibly
                     console.warn('[RGB Location] ⚠ Location saved in UI but row not found in sheet (Device_ID=%s, Test_ID=%s). sheetsUpdated=0', deviceId, testId);
                     if (typeof showToast === 'function') {
-                        showToast('⚠ Location saved in view. Sheet not updated — row not found. Try reloading data (📡 Load All).', 'warning', 7000);
+                        showToast('⚠ Location saved in view. Sheet row not found — try 📡 Load All then save again.', 'warning', 7000);
+                    }
+                    if (saveBtn) {
+                        saveBtn.textContent = '\u26A0 Not found';
+                        saveBtn.className = 'btn-save-location error';
+                        saveBtn.disabled = false;
+                        setTimeout(function() {
+                            saveBtn.textContent = '\uD83D\uDCBE Save';
+                            saveBtn.className = 'btn-save-location';
+                        }, 4000);
                     }
                 }
             } else {
@@ -25016,12 +25087,18 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
                 if (typeof showToast === 'function') {
                     showToast('Failed to save location data to sheet', 'error');
                 }
+                if (saveBtn) { saveBtn.textContent = '\u274C Error'; saveBtn.className = 'btn-save-location error'; saveBtn.disabled = false; }
             }
         })
         .withFailureHandler(function(error) {
             console.error('[RGB Location] Error saving location data:', error);
             if (typeof showToast === 'function') {
                 showToast('Error saving location: ' + (error.message || 'Unknown error'), 'error');
+            }
+            if (saveBtn) {
+                saveBtn.textContent = '\u274C Error';
+                saveBtn.className = 'btn-save-location error';
+                saveBtn.disabled = false;
             }
         })
         .updateRGBLocationData(deviceId, testId, place, gps, state);
