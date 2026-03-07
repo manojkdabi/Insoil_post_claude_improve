@@ -9948,3 +9948,136 @@ function srvr_saveInventoryEvidence(requestId, fileName, base64Data) {
     return { ok: false, error: 'Failed to upload inventory evidence: ' + e.message };
   }
 }
+
+// ============================================================
+// QC Manual Override Persistence (Enhancement #10)
+// Saves/clears the QC_Manual_Override column in QC_Data sheet
+// ============================================================
+/**
+ * Persist a manual QC override for one device+test to the QC_Data sheet.
+ * Called from the frontend after toggleQCOverrideMode / applyQCOverride.
+ *
+ * payload = { deviceId, testId, status, enabled }
+ *   status  – 'PASS' | 'FAIL' (ignored when enabled===false)
+ *   enabled – boolean; false means clear the override (write empty string)
+ */
+function saveQCManualOverride(payload) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const deviceIdStr = String((payload && payload.deviceId) || '').trim();
+    const testIdStr   = String((payload && payload.testId)   || '').trim();
+    if (!deviceIdStr || !testIdStr) {
+      return { ok: false, error: 'deviceId and testId are required' };
+    }
+
+    const enabled    = payload.enabled === true || payload.enabled === 'true';
+    const statusStr  = enabled ? String((payload.status || '')).trim().toUpperCase() : '';
+
+    const sheet = ss.getSheetByName('QC_Data');
+    if (!sheet) return { ok: false, error: 'QC_Data sheet not found' };
+
+    // 1. Detect header row
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { ok: false, error: 'QC_Data sheet is empty' };
+
+    const headerRange  = sheet.getRange(1, 1, Math.min(10, lastRow), sheet.getLastColumn());
+    const headerValues = headerRange.getDisplayValues();
+    let headerRowIndex = -1;
+    for (let i = 0; i < headerValues.length; i++) {
+      const rowStr = headerValues[i].join(' ').toLowerCase().replace(/[\s_-]/g, '');
+      if (rowStr.includes('deviceid') && rowStr.includes('testid')) {
+        headerRowIndex = i;
+        break;
+      }
+    }
+    if (headerRowIndex === -1) return { ok: false, error: 'Header row not found in QC_Data' };
+
+    const headerRowNumber = headerRowIndex + 1;
+
+    // 2. Ensure QC_Manual_Override column exists
+    const headers = sheet.getRange(headerRowNumber, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+    const norm = h => String(h || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    let overrideColIndex = headers.findIndex(h => norm(h) === 'qcmanualoverride');
+    if (overrideColIndex < 0) {
+      overrideColIndex = headers.length; // will be next column (0-indexed)
+      sheet.getRange(headerRowNumber, overrideColIndex + 1).setValue('QC_Manual_Override');
+      SpreadsheetApp.flush();
+    }
+    const overrideCol = overrideColIndex + 1; // 1-indexed
+
+    // 3. Find matching row(s) and write override
+    const dataStartRow = headerRowNumber + 1;
+    const numDataRows  = lastRow - dataStartRow + 1;
+    if (numDataRows <= 0) return { ok: false, error: 'No data rows in QC_Data' };
+
+    const idxDid = headers.findIndex(h => norm(h) === 'deviceid');
+    const idxTid = headers.findIndex(h => norm(h) === 'testid');
+    if (idxDid < 0 || idxTid < 0) return { ok: false, error: 'deviceid/testid columns not found' };
+
+    const allRows = sheet.getRange(dataStartRow, 1, numDataRows, sheet.getLastColumn()).getDisplayValues();
+    let updated = 0;
+    for (let r = 0; r < allRows.length; r++) {
+      const rowDid = String(allRows[r][idxDid] || '').trim();
+      const rowTid = String(allRows[r][idxTid] || '').trim();
+      if (rowDid === deviceIdStr && rowTid === testIdStr) {
+        sheet.getRange(dataStartRow + r, overrideCol).setValue(statusStr);
+        updated++;
+        break; // Each deviceId+testId pair is unique in QC_Data — stop after first match
+      }
+    }
+
+    return { ok: true, updated: updated, status: statusStr };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Load all non-empty QC_Manual_Override values from QC_Data sheet.
+ * Returns array of { deviceId, testId, status } objects.
+ */
+function getQCManualOverrides() {
+  try {
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('QC_Data');
+    if (!sheet) return { ok: true, overrides: [] };
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { ok: true, overrides: [] };
+
+    const headerRange  = sheet.getRange(1, 1, Math.min(10, lastRow), sheet.getLastColumn());
+    const headerValues = headerRange.getDisplayValues();
+    let headerRowIndex = -1;
+    for (let i = 0; i < headerValues.length; i++) {
+      const rowStr = headerValues[i].join(' ').toLowerCase().replace(/[\s_-]/g, '');
+      if (rowStr.includes('deviceid') && rowStr.includes('testid')) { headerRowIndex = i; break; }
+    }
+    if (headerRowIndex === -1) return { ok: true, overrides: [] };
+
+    const headerRowNumber = headerRowIndex + 1;
+    const headers = sheet.getRange(headerRowNumber, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+    const norm = h => String(h || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    const idxDid  = headers.findIndex(h => norm(h) === 'deviceid');
+    const idxTid  = headers.findIndex(h => norm(h) === 'testid');
+    const idxOver = headers.findIndex(h => norm(h) === 'qcmanualoverride');
+    if (idxDid < 0 || idxTid < 0 || idxOver < 0) return { ok: true, overrides: [] };
+
+    const dataStartRow = headerRowNumber + 1;
+    const numDataRows  = lastRow - dataStartRow + 1;
+    if (numDataRows <= 0) return { ok: true, overrides: [] };
+
+    const allRows   = sheet.getRange(dataStartRow, 1, numDataRows, headers.length).getDisplayValues();
+    const overrides = [];
+    for (const row of allRows) {
+      const did    = String(row[idxDid]  || '').trim();
+      const tid    = String(row[idxTid]  || '').trim();
+      const status = String(row[idxOver] || '').trim().toUpperCase();
+      if (did && tid && (status === 'PASS' || status === 'FAIL')) {
+        overrides.push({ deviceId: did, testId: tid, status });
+      }
+    }
+    return { ok: true, overrides };
+  } catch (e) {
+    return { ok: false, error: e.message, overrides: [] };
+  }
+}

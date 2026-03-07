@@ -14714,6 +14714,11 @@ function fetchOperationalDataOnce(options = {}) {
         // R15: Update server-range chip
         updateRgbServerRangeChip(serverDays, res?.__info);
 
+        // Enhancement #10: Load QC manual overrides from sheet after each data refresh
+        if (res && res.qcData) {
+          if (typeof _loadQCOverridesFromSheet === 'function') _loadQCOverridesFromSheet();
+        }
+
         if (typeof onSuccess === 'function') onSuccess(res);
       } finally {
         window.__opDataInFlight = false;
@@ -15691,6 +15696,10 @@ function loadOperationalData(opts = {}) {
         // ============================
         // RENDER (based on mode)
         // ============================
+        // Enhancement #10: Load QC manual overrides from sheet after data refresh
+        if (res && res.qcData && typeof _loadQCOverridesFromSheet === 'function') {
+          _loadQCOverridesFromSheet();
+        }
         if (mode === 'full') {
           if (typeof renderTable === 'function') renderTable('rgb');
           if (typeof setRgbFocus === 'function') setRgbFocus('metrics');
@@ -25683,6 +25692,12 @@ function toggleQCOverrideMode() {
         note.style.color = '#888';
     }
     try { localStorage.setItem('qcManualOverrideEnabled', JSON.stringify(qcManualOverrideEnabled)); } catch(e) {}
+    // Enhancement #10: persist override state to QC_Data sheet
+    if (!toggle.checked) {
+        // Override was just disabled — clear the sheet value
+        _persistQCOverrideToSheet(deviceId, testId, '', false);
+    }
+    // Note: when enabling, the actual PASS/FAIL value is written by applyQCOverride → _persistQCOverrideToSheet
 }
 function applyQCOverride() {
     const input  = document.getElementById('qaqc-override-input');
@@ -25713,7 +25728,56 @@ function applyQCOverride() {
     }
     qcManualStatus[overrideKey] = value;
     try { localStorage.setItem('qcManualStatus', JSON.stringify(qcManualStatus)); } catch(e) {}
+    // Enhancement #10: persist to QC_Data sheet
+    _persistQCOverrideToSheet(deviceId, testId, value, true);
     renderTable('qaqc');
+}
+
+// =========================================
+// Enhancement #10: QC Override GAS Persist
+// =========================================
+/**
+ * Fire-and-forget: persist one QC manual override to the QC_Data sheet.
+ * Silently fails (no UI disruption) if GAS is unavailable.
+ */
+function _persistQCOverrideToSheet(deviceId, testId, status, enabled) {
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && !res.ok) console.warn('saveQCManualOverride failed:', res.error);
+    })
+    .withFailureHandler(function(err) {
+      console.warn('saveQCManualOverride GAS error:', err);
+    })
+    .saveQCManualOverride({ deviceId: deviceId, testId: testId, status: String(status || '').toUpperCase(), enabled: !!enabled });
+}
+
+/**
+ * Called once after QC data is loaded from the server.
+ * Fetches QC_Manual_Override values from the sheet and merges them into
+ * qcManualStatus / qcManualOverrideEnabled (sheet takes precedence over localStorage).
+ */
+function _loadQCOverridesFromSheet() {
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok || !Array.isArray(res.overrides)) return;
+      res.overrides.forEach(function(ov) {
+        const key = ov.deviceId + '|' + ov.testId;
+        qcManualStatus[key]          = ov.status;
+        qcManualOverrideEnabled[key] = true;
+        window.qcManualStatus          = qcManualStatus;
+        window.qcManualOverrideEnabled = qcManualOverrideEnabled;
+      });
+      // Persist merged state back to localStorage
+      try { localStorage.setItem('qcManualStatus',          JSON.stringify(qcManualStatus));          } catch(e) {}
+      try { localStorage.setItem('qcManualOverrideEnabled', JSON.stringify(qcManualOverrideEnabled)); } catch(e) {}
+      if (res.overrides.length > 0) renderTable('qaqc');
+    })
+    .withFailureHandler(function(err) {
+      console.warn('getQCManualOverrides GAS error:', err);
+    })
+    .getQCManualOverrides();
 }
 
 // ===============================
