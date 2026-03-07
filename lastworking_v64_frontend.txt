@@ -2823,6 +2823,44 @@
     .rgb-metric-mid  { background-color: #dcfce7 !important; }
     .rgb-metric-high { background-color: #fef3c7 !important; }
 
+    /* ===== Feature 8: Inline Sparklines ===== */
+    .rgb-sparkline-cell { padding: 2px 4px !important; vertical-align: middle; }
+    .rgb-sparkline-svg  { display: block; overflow: visible; }
+    .rgb-sparkline-bar  { rx: 1; }
+
+    /* ===== Feature 13: CSV Import Preview Modal ===== */
+    #csv-import-preview-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.45);
+      align-items: center;
+      justify-content: center;
+    }
+    #csv-import-preview-modal.open { display: flex; }
+    #csv-import-preview-box {
+      background: #fff;
+      border-radius: 10px;
+      padding: 26px 30px;
+      width: 760px;
+      max-width: 96vw;
+      max-height: 82vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #csv-import-preview-box h3 { margin: 0; font-size: 17px; color: #1e293b; }
+    #csv-import-preview-meta  { font-size: 13px; color: #475569; }
+    #csv-import-preview-table-wrap { overflow-x: auto; }
+    #csv-import-preview-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    #csv-import-preview-table th { background: #f1f5f9; padding: 4px 8px; text-align: left; font-weight: 600; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+    #csv-import-preview-table td { padding: 3px 8px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+    #csv-import-preview-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; align-items: center; }
+    #csv-import-preview-warn { font-size: 12px; color: #b45309; background: #fef3c7; padding: 6px 10px; border-radius: 5px; display: none; }
+
     /* ===== Feature 5: Move Confirm Modal ===== */
     #rgb-move-confirm-modal {
       display: none;
@@ -7585,6 +7623,7 @@
             <span id="rgb-sel-count"></span>
             <button class="btn btn-outline" onclick="toggleRgbBatchSidebar()" title="Toggle batch sidebar">☰ Batches</button>
             <button class="btn btn-outline" onclick="toggleRgbColVisPanel()" title="Toggle column visibility">⊞ Columns</button>
+            <button class="btn btn-outline" onclick="toggleRgbSparklines()" id="btn-rgb-sparklines" title="Toggle inline sparklines per row">📊 Sparklines</button>
           </div>
 
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
@@ -16125,72 +16164,195 @@ const verticalLinesPlugin = {
 
 // CSV IMPORT
 /**
- * client_ImportCSV_CreateRGBData
- * 
- * Handles CSV file selection and upload to the server.
- * Connects directly to backend: srvr_CreateRGBData_ImportCSV_appendtoRGB_dedup
+ * client_ImportCSV_CreateRGBData  (Feature 13: CSV Import Preview)
+ *
+ * Parses the selected CSV file locally and shows a preview modal
+ * (Feature 13) so the user can inspect headers and a sample of rows
+ * before the data is sent to the backend.
+ * Connects to backend: srvr_CreateRGBData_ImportCSV_appendtoRGB_dedup
  */
 function client_ImportCSV_CreateRGBData(fileInput) {
     const file = fileInput && fileInput.files && fileInput.files[0];
     if (!file) return;
 
-    // Optional: UI feedback (safe even if elements don't exist)
-    const statusEl = document.getElementById('importStatus') || null;
-    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
-
-    setStatus('Reading CSV...');
-
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = function() {
         try {
             const csvText = String(reader.result || '');
             if (!csvText.trim()) {
-                alert('CSV file appears empty.');
-                setStatus('');
+                if (typeof showToast === 'function') showToast('CSV file appears empty.', 'warning');
+                else alert('CSV file appears empty.');
+                try { fileInput.value = ''; } catch (e) {}
                 return;
             }
-
-            setStatus('Uploading & importing (server)...');
-
-            google.script.run
-                .withSuccessHandler((res) => {
-                    // res is expected to be: { addedCount, skippedCount, errorCount, errors? }
-                    const added = (res && res.addedCount) || 0;
-                    const skipped = (res && res.skippedCount) || 0;
-                    const errCount = (res && res.errorCount) || 0;
-
-                    const msg = `Import complete. Added: ${added}, Skipped (dedup): ${skipped}, Errors: ${errCount}`;
-                    setStatus(msg);
-
-                    // Clear file input so same file can be re-selected if needed
-                    try { fileInput.value = ''; } catch (e) {}
-
-                    // Refresh operational data and redraw tables (matches your 1b flow)
-                    if (typeof loadOperationalData === 'function') {
-                        loadOperationalData();
-                    } else if (typeof renderTable === 'function') {
-                        renderTable('rgb');
-                    }
-                })
-                .withFailureHandler((err) => {
-                    console.error('Import failed:', err);
-                    alert('Import failed: ' + (err && err.message ? err.message : err));
-                    setStatus('Import failed.');
-                })
-                .srvr_CreateRGBData_ImportCSV_appendtoRGB_dedup({ csvText: csvText });
+            // Store pending state so confirmCsvImport can access it
+            window.__pendingCsvImport = { csvText: csvText, fileInput: fileInput };
+            showCsvImportPreview(csvText);
         } catch (e) {
-            console.error(e);
-            alert('Import error: ' + e.message);
-            setStatus('Import error.');
+            console.error('CSV read error:', e);
+            if (typeof showToast === 'function') showToast('CSV read error: ' + e.message, 'error');
+            else alert('CSV read error: ' + e.message);
         }
     };
-
-    reader.onerror = () => {
-        alert('Failed to read CSV file.');
-        setStatus('Failed to read file.');
+    reader.onerror = function() {
+        if (typeof showToast === 'function') showToast('Failed to read CSV file.', 'error');
+        else alert('Failed to read CSV file.');
     };
-
     reader.readAsText(file);
+}
+
+/**
+ * Parse a raw CSV text into an array of arrays.
+ * Handles quoted fields and newlines within quoted values.
+ */
+function parseCsvRows(csvText) {
+    const rows = [];
+    const lines = csvText.split(/\r?\n/);
+    // Simple parser that handles "" escaping inside quoted fields
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.trim()) continue;
+        const cells = [];
+        let cur = '', inQ = false;
+        for (let j = 0; j < line.length; j++) {
+            const ch = line[j];
+            if (inQ) {
+                if (ch === '"') {
+                    if (line[j + 1] === '"') { cur += '"'; j++; }
+                    else inQ = false;
+                } else {
+                    cur += ch;
+                }
+            } else {
+                if (ch === '"') { inQ = true; }
+                else if (ch === ',') { cells.push(cur); cur = ''; }
+                else { cur += ch; }
+            }
+        }
+        cells.push(cur);
+        rows.push(cells);
+    }
+    return rows;
+}
+
+/**
+ * Open the CSV import preview modal.
+ * Shows headers, row count, and first 8 data rows.
+ */
+function showCsvImportPreview(csvText) {
+    const modal = document.getElementById('csv-import-preview-modal');
+    if (!modal) {
+        // Fallback: no modal — proceed directly
+        _executeCsvImport(csvText, null);
+        return;
+    }
+
+    const rows = parseCsvRows(csvText);
+    if (!rows.length) {
+        if (typeof showToast === 'function') showToast('CSV appears empty after parsing.', 'warning');
+        return;
+    }
+
+    const headers = rows[0];
+    const dataRows = rows.slice(1).filter(function(r) { return r.some(function(c) { return c.trim(); }); });
+    const totalData = dataRows.length;
+    const previewRows = dataRows.slice(0, 8);
+
+    // Populate meta
+    const metaEl = document.getElementById('csv-import-preview-meta');
+    if (metaEl) {
+        metaEl.textContent = totalData + ' data row(s) found · ' + headers.length + ' column(s) · File: ' + ((window.__pendingCsvImport && window.__pendingCsvImport.fileInput && window.__pendingCsvImport.fileInput.files[0]) ? window.__pendingCsvImport.fileInput.files[0].name : '');
+    }
+
+    // Warning if no rows
+    const warnEl = document.getElementById('csv-import-preview-warn');
+    if (warnEl) {
+        if (totalData === 0) {
+            warnEl.textContent = '⚠ No data rows detected. The file may be headers-only or incorrectly formatted.';
+            warnEl.style.display = 'block';
+        } else {
+            warnEl.style.display = 'none';
+        }
+    }
+
+    // Build preview table header
+    const thead = document.getElementById('csv-import-preview-thead');
+    if (thead) {
+        thead.innerHTML = '<tr>' + headers.map(function(h) {
+            return '<th>' + String(h ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</th>';
+        }).join('') + '</tr>';
+    }
+
+    // Build preview table body (first 8 rows)
+    const tbody = document.getElementById('csv-import-preview-tbody');
+    if (tbody) {
+        tbody.innerHTML = previewRows.map(function(row) {
+            return '<tr>' + row.map(function(cell) {
+                return '<td title="' + String(cell ?? '').replace(/"/g, '&quot;').replace(/&/g, '&amp;') + '">' +
+                    String(cell ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 40) + '</td>';
+            }).join('') + '</tr>';
+        }).join('');
+        if (totalData > 8) {
+            tbody.innerHTML += '<tr><td colspan="' + headers.length + '" style="color:#6b7280; font-style:italic; padding:4px 8px;">… and ' + (totalData - 8) + ' more row(s) not shown …</td></tr>';
+        }
+    }
+
+    // Update confirm button label
+    const confirmBtn = document.getElementById('csv-import-confirm-btn');
+    if (confirmBtn) confirmBtn.textContent = 'Import All ' + totalData + ' Rows';
+
+    modal.classList.add('open');
+}
+
+/** Close the CSV import preview modal without importing. */
+function closeCsvImportPreview() {
+    const modal = document.getElementById('csv-import-preview-modal');
+    if (modal) modal.classList.remove('open');
+    // Clear file input so same file can be re-selected
+    if (window.__pendingCsvImport && window.__pendingCsvImport.fileInput) {
+        try { window.__pendingCsvImport.fileInput.value = ''; } catch (e) {}
+    }
+    window.__pendingCsvImport = null;
+}
+
+/** Called when user clicks "Import All Rows" in the preview modal. */
+function confirmCsvImport() {
+    const pending = window.__pendingCsvImport;
+    closeCsvImportPreview();
+    if (!pending || !pending.csvText) {
+        if (typeof showToast === 'function') showToast('No CSV data to import.', 'warning');
+        return;
+    }
+    _executeCsvImport(pending.csvText, pending.fileInput);
+}
+
+/** Internal: send CSV text to the backend for import. */
+function _executeCsvImport(csvText, fileInput) {
+    if (typeof showToast === 'function') showToast('⏳ Uploading CSV to server… please wait.', 'info', 120000);
+    const statusEl = document.getElementById('importStatus') || null;
+    if (statusEl) statusEl.textContent = 'Uploading & importing (server)...';
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (typeof dismissProgressToast === 'function') dismissProgressToast();
+            const added   = (res && res.addedCount)   || 0;
+            const skipped = (res && res.skippedCount)  || 0;
+            const errCount= (res && res.errorCount)    || 0;
+            const msg = 'Import complete ✅  Added: ' + added + ', Skipped (dedup): ' + skipped + ', Errors: ' + errCount;
+            if (typeof showToast === 'function') showToast(msg, errCount > 0 ? 'warning' : 'success', 7000);
+            if (statusEl) statusEl.textContent = msg;
+            if (fileInput) { try { fileInput.value = ''; } catch (e) {} }
+            if (typeof loadOperationalData === 'function') loadOperationalData();
+            else if (typeof renderTable === 'function') renderTable('rgb');
+        })
+        .withFailureHandler(function(err) {
+            if (typeof dismissProgressToast === 'function') dismissProgressToast();
+            const msg = 'Import failed: ' + ((err && err.message) ? err.message : String(err));
+            console.error('CSV import failed:', err);
+            if (typeof showToast === 'function') showToast('❌ ' + msg, 'error', 8000);
+            if (statusEl) statusEl.textContent = 'Import failed.';
+        })
+        .srvr_CreateRGBData_ImportCSV_appendtoRGB_dedup({ csvText: csvText });
 }
 
 function refreshRgbCalculatedMetrics() {
@@ -17239,6 +17401,7 @@ function renderTable(tab) {
     ${hiddenCols.has('GPS') ? '' : '<th>GPS</th>'}
     ${shv('State', 'State')}
     ${metricHeads}
+    ${isRGB && window.rgbSparklines ? '<th title="Nutrient profile sparkline">Sparkline</th>' : ''}
   </tr>`;
 
   // -------------------------------
@@ -17252,7 +17415,8 @@ function renderTable(tab) {
     const textColKeys = ['Client_ID','Farm_ID','ProdBatch_ID','QCBatch_ID','Device_ID','Test_ID','Crop','Test_date','Place','GPS','State'];
     const visibleText = textColKeys.filter(k => !hiddenCols.has(k)).length;
     const visibleMetric = (METRIC_COLS_FLAT || []).filter(c => !hiddenCols.has(c.k)).length;
-    totalCols = 2 + visibleText + visibleMetric; // 2 = checkbox + status badge
+    const sparklineCol = (window.rgbSparklines ? 1 : 0);
+    totalCols = 2 + visibleText + visibleMetric + sparklineCol; // 2 = checkbox + status badge
   } else {
     totalCols = 12 + ((METRIC_COLS_FLAT && METRIC_COLS_FLAT.length) ? METRIC_COLS_FLAT.length : 0);
   }
@@ -17516,6 +17680,13 @@ function renderTable(tab) {
         if (bg) td.style.backgroundColor = bg;
       }
     });
+
+    // Feature 8: Inline sparklines — nutrient profile mini bar chart
+    if (isRGB && window.rgbSparklines && typeof renderRgbSparkline === 'function') {
+      const tdSpark = tr.insertCell();
+      tdSpark.className = 'rgb-sparkline-cell';
+      tdSpark.appendChild(renderRgbSparkline(row, pageData));
+    }
 
     tbody.appendChild(tr);
   });
@@ -22944,6 +23115,103 @@ function toggleRgbColorCoding() {
   const btn = document.getElementById('btn-rgb-color');
   if (btn) btn.style.fontWeight = window.rgbColorCoding ? '700' : '';
   if (typeof renderTable === 'function') renderTable('rgb');
+}
+
+// ===== Feature 8: Inline Sparklines =====
+/**
+ * Toggle sparkline column on/off in the RGB table.
+ * window.rgbSparklines controls whether the column is rendered.
+ */
+function toggleRgbSparklines() {
+  window.rgbSparklines = !window.rgbSparklines;
+  const btn = document.getElementById('btn-rgb-sparklines');
+  if (btn) btn.style.fontWeight = window.rgbSparklines ? '700' : '';
+  if (typeof renderTable === 'function') renderTable('rgb');
+}
+
+/**
+ * Render a mini SVG bar chart showing all 13 metric values for a single row,
+ * each bar normalized against the column's min/max across the current page.
+ * Returns an SVGElement.
+ *
+ * @param {Object} row       - A row from rgbData
+ * @param {Array}  pageData  - All rows on the current page (used for normalization)
+ * @returns {SVGElement}
+ */
+function renderRgbSparkline(row, pageData) {
+  // Standalone helpers (toNum / getMetricVal are local to renderTable, so replicate here)
+  const _toNum = function(v) {
+    const n = (typeof v === 'number') ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const _getMetricVal = function(r, key) {
+    if (Object.prototype.hasOwnProperty.call(r, key) && r[key] !== '' && r[key] !== null && r[key] !== undefined) {
+      return r[key];
+    }
+    const raw = r.raw || r.Raw || r.RAW || null;
+    if (!raw) return '';
+    if (typeof safeCalcMetric === 'function') return safeCalcMetric(raw, key);
+    if (typeof calcMetric === 'function') return calcMetric(raw, key);
+    return '';
+  };
+
+  const metrics = Array.isArray(METRIC_COLS_FLAT) ? METRIC_COLS_FLAT : [];
+  const W = 104, H = 22, barW = 6, gap = 2;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.className.baseVal = 'rgb-sparkline-svg';
+  svg.setAttribute('title', 'Nutrient profile — bar height = value relative to page min/max');
+
+  metrics.forEach(function(c, i) {
+    const allVals = pageData.map(function(r) { return _toNum(_getMetricVal(r, c.k)); }).filter(function(v) { return v !== null; });
+    const val = _toNum(_getMetricVal(row, c.k));
+    const x = i * (barW + gap);
+
+    // Background track (light grey)
+    const track = document.createElementNS(ns, 'rect');
+    track.setAttribute('x', x);
+    track.setAttribute('y', 0);
+    track.setAttribute('width', barW);
+    track.setAttribute('height', H);
+    track.setAttribute('fill', '#e2e8f0');
+    track.setAttribute('rx', 1);
+    svg.appendChild(track);
+
+    if (val !== null && allVals.length > 0) {
+      const mn = Math.min.apply(null, allVals);
+      const mx = Math.max.apply(null, allVals);
+      const range = mx - mn;
+      const ratio = (range > 0) ? (val - mn) / range : 0.5;
+      const barH = Math.max(2, Math.round(ratio * H));
+      const y = H - barH;
+
+      // Color: use same palette as feature 3 (p25/p75 percentiles)
+      const sorted = allVals.slice().sort(function(a, b) { return a - b; });
+      const p25 = sorted[Math.floor(sorted.length * 0.25)];
+      const p75 = sorted[Math.floor(sorted.length * 0.75)];
+      const fill = (val <= p25) ? '#f87171' : (val >= p75) ? '#fbbf24' : '#34d399';
+
+      const bar = document.createElementNS(ns, 'rect');
+      bar.setAttribute('x', x);
+      bar.setAttribute('y', y);
+      bar.setAttribute('width', barW);
+      bar.setAttribute('height', barH);
+      bar.setAttribute('fill', fill);
+      bar.setAttribute('rx', 1);
+      bar.setAttribute('class', 'rgb-sparkline-bar');
+
+      // Tooltip via title element
+      const titleEl = document.createElementNS(ns, 'title');
+      titleEl.textContent = c.label + ': ' + val.toFixed(3);
+      bar.appendChild(titleEl);
+      svg.appendChild(bar);
+    }
+  });
+
+  return svg;
 }
 
 // ===== Feature 5: Move Confirm Modal =====
@@ -35682,6 +35950,25 @@ function _dbSortDefaultFirst_(arr) {
       <div id="rgb-retest-modal-actions">
         <button class="btn btn-outline" onclick="closeRetestModal()">Cancel</button>
         <button class="btn btn-indigo" onclick="confirmRetestMove()">Move to RGB/Abs</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature 13: CSV Import Preview Modal -->
+  <div id="csv-import-preview-modal" role="dialog" aria-modal="true" aria-labelledby="csv-import-preview-title">
+    <div id="csv-import-preview-box">
+      <h3 id="csv-import-preview-title">CSV Import Preview</h3>
+      <p id="csv-import-preview-meta"></p>
+      <p id="csv-import-preview-warn"></p>
+      <div id="csv-import-preview-table-wrap">
+        <table id="csv-import-preview-table">
+          <thead id="csv-import-preview-thead"></thead>
+          <tbody id="csv-import-preview-tbody"></tbody>
+        </table>
+      </div>
+      <div id="csv-import-preview-actions">
+        <button class="btn btn-outline" onclick="closeCsvImportPreview()">Cancel</button>
+        <button class="btn btn-teal" id="csv-import-confirm-btn" onclick="confirmCsvImport()">Import All Rows</button>
       </div>
     </div>
   </div>
