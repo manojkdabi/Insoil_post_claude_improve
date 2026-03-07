@@ -17071,11 +17071,18 @@ function renderTable(tab) {
       saveLocBtn.addEventListener('click', function() {
         const myTr = this.closest('tr');
         if (!myTr) return;
-        // placeInput.value is always kept in sync with Geoapify's visible input
-        const pi = myTr.querySelector('.rgb-place-input');
+        // Find place value with three fall-backs in priority order:
+        // 1. data-selectedPlace stamp (set by Geoapify select handler, persists even
+        //    if Geoapify v2 clears the input value after selection)
+        // 2. Any .rgb-place-input element with a non-empty value (original hidden
+        //    input or Geoapify's visible proxy)
+        let placeVal = '';
+        const allPi = myTr.querySelectorAll('.rgb-place-input');
+        allPi.forEach(function(inp) {
+          if (!placeVal) placeVal = (inp.dataset.selectedPlace || inp.value || '').trim();
+        });
         const gi = myTr.querySelector('.rgb-gps-input');
         const si = myTr.querySelector('.rgb-state-input-readonly');
-        const placeVal = pi ? pi.value : '';
         const gpsVal   = gi ? gi.value : '';
         const stateVal = si ? si.value : '';
         if (!placeVal) {
@@ -24906,6 +24913,8 @@ function initRGBLocationAutocomplete(placeInput) {
         geoInput.classList.add('rgb-place-input');
         geoInput.addEventListener('input', () => {
             placeInput.value = geoInput.value;
+            // Clear the selected-place stamp so Save button requires a fresh pick
+            placeInput.dataset.selectedPlace = '';
         });
     }
 
@@ -24975,6 +24984,9 @@ function initRGBLocationAutocomplete(placeInput) {
 
         if (geoInput) geoInput.value = placeText;
         placeInput.value = placeText;
+        // Stamp the selected place so the 💾 Save button can still read it
+        // even if Geoapify v2 clears geoInput.value after the select callback.
+        placeInput.dataset.selectedPlace = placeText;
 
         console.log('[RGB Location] Final values - Place=%s, GPS=%s, State=%s', placeText, gpsValue, stateInput?.value || '');
 
