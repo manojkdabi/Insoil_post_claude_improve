@@ -7778,6 +7778,8 @@
 
             <input type="text" id="search-qaqc-dev" class="search-input" placeholder="Device ID" onkeyup="resetPageAndRender('qaqc')">
             <input type="text" id="search-qaqc-test" class="search-input" placeholder="Test ID" onkeyup="resetPageAndRender('qaqc')">
+            <input type="text" id="search-qaqc-global" class="search-input" placeholder="🔍 Search all columns…" style="min-width:160px;" onkeyup="resetPageAndRender('qaqc')">
+            <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="toggleQaqcColVisPanel()" title="Toggle column visibility">⊞ Columns</button>
           </div>
 
           <div class="qaqc-controls qaqc-controls-results qaqc-toolbar-row">
@@ -7793,8 +7795,27 @@
                 <span class="qaqc-toggle-label">Raw RGB</span>
               </label>
             </div>
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:4px;">
+              <select title="Rows per page" style="font-size:11px;padding:2px 4px;border-radius:4px;border:1px solid #d1d5db;" onchange="setQaqcRowsPerPage(this.value)">
+                <option value="25">25/page</option>
+                <option value="50" selected>50/page</option>
+                <option value="100">100/page</option>
+              </select>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(1)">Today</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(7)">7d</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(30)">30d</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(90)">90d</button>
+            </div>
             <div id="qaqc-progress-bar" role="alert" style="display:none; align-items:center; gap:8px; padding:6px 12px; background:#fef3c7; border:1px solid #fbbf24; border-radius:6px; font-size:12px; color:#92400e; margin-top:4px; flex-wrap:wrap;">
               <span id="qaqc-progress-msg"></span>
+            </div>
+            <div id="qaqc-undo-bar" role="alert" style="display:none; align-items:center; gap:8px; padding:6px 12px; background:#fef3c7; border:1px solid #f59e0b; border-radius:6px; font-size:12px; color:#92400e; margin-top:4px; flex-wrap:wrap;">
+              <span id="qaqc-undo-msg"></span>
+              <button class="btn btn-orange" style="font-size:12px; padding:3px 10px;" onclick="undoLastQaqcMove()">↩ Undo last move</button>
+              <span id="qaqc-undo-timer"></span>
+            </div>
+            <div id="qaqc-col-vis-panel" style="display:none; flex-wrap:wrap; gap:6px; padding:8px 12px; background:#f0fdf4; border:1px solid #86efac; border-radius:6px; margin-top:4px;">
+              <!-- populated by renderQaqcColVisPanel() -->
             </div>
           </div>
 
@@ -14371,6 +14392,16 @@ let multiSelect = { rgb: [], qaqc: [], results: [] }; // Yellow Highlights (View
 var checkedRows = window.checkedRows = window.checkedRows || { rgb: [], qaqc: [] };
 let qcManualStatus          = {};
 let qcManualOverrideEnabled = {};
+try {
+  const saved = localStorage.getItem('qcManualStatus');
+  if (saved) qcManualStatus = JSON.parse(saved);
+  window.qcManualStatus = qcManualStatus;
+} catch(e) {}
+try {
+  const saved = localStorage.getItem('qcManualOverrideEnabled');
+  if (saved) qcManualOverrideEnabled = JSON.parse(saved);
+  window.qcManualOverrideEnabled = qcManualOverrideEnabled;
+} catch(e) {}
 let currentQCBatchId        = 'Default';
 let chartObjs               = {};
 
@@ -14694,6 +14725,8 @@ function fetchOperationalDataOnce(options = {}) {
 // ============================
 window.__lastRgbMove = null;
 window.__lastRgbMoveTimer = null;
+window.__lastQaqcMove = null;
+window.__lastQaqcMoveTimer = null;
 
 /**
  * Show the undo bar for `seconds` seconds after a Move-to-QC succeeds.
@@ -14795,9 +14828,89 @@ function undoLastRgbMove() {
     .syncMoveDataToRGB(savedMove.req);
 }
 
-// ==========================================
-// R15 — Server-side date-range-bounded load
-// ==========================================
+function showQaqcUndoBar(n, seconds) {
+  const bar   = document.getElementById('qaqc-undo-bar');
+  const msg   = document.getElementById('qaqc-undo-msg');
+  const timer = document.getElementById('qaqc-undo-timer');
+  if (!bar || !msg || !timer) return;
+
+  if (window.__lastQaqcMoveTimer) clearInterval(window.__lastQaqcMoveTimer);
+
+  msg.textContent = `${n} row(s) moved to RGB/Abs.`;
+  timer.textContent = `(${seconds}s)`;
+  bar.style.display = 'flex';
+
+  let remaining = seconds;
+  window.__lastQaqcMoveTimer = setInterval(function () {
+    remaining--;
+    timer.textContent = `(${remaining}s)`;
+    if (remaining <= 0) {
+      clearInterval(window.__lastQaqcMoveTimer);
+      window.__lastQaqcMoveTimer = null;
+      bar.style.display = 'none';
+      window.__lastQaqcMove = null;
+    }
+  }, 1000);
+}
+
+function undoLastQaqcMove() {
+  const move = window.__lastQaqcMove;
+  if (!move) { showToast('Nothing to undo.', 'info', 3000); return; }
+
+  const ageMs = Date.now() - move.movedAt;
+  if (ageMs > 35000) {
+    showToast('Undo window expired (> 30 s). Rows are already in RGB/Abs.', 'warning', 5000);
+    return;
+  }
+
+  const hasServer = (typeof google !== 'undefined' && google.script?.run);
+  if (!hasServer) {
+    showToast('Undo requires the Apps Script deployment.', 'info', 4000);
+    return;
+  }
+
+  const bar = document.getElementById('qaqc-undo-bar');
+  if (bar) bar.style.display = 'none';
+  if (window.__lastQaqcMoveTimer) { clearInterval(window.__lastQaqcMoveTimer); window.__lastQaqcMoveTimer = null; }
+  const savedMove = move;
+  window.__lastQaqcMove = null;
+
+  const moveBtn = document.getElementById('btn-qaqc-move');
+  if (moveBtn) moveBtn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (moveBtn) moveBtn.disabled = false;
+      if (!res || res.ok !== true) {
+        showToast('Undo failed: ' + (res?.message || 'Unknown error'), 'error', 6000);
+        return;
+      }
+      showToast('Undo complete — ' + savedMove.n + ' row(s) moved back to QC.', 'success', 5000);
+
+      // Optimistic in-memory undo
+      const req = savedMove.req;
+      const movedSet = new Set(req.map(r => r.Device_ID + '|' + r.Test_ID));
+      const srcRgbArray = window.rgbData || rgbData || [];
+
+      const undoneRows = savedMove.movedRows || srcRgbArray.filter(function(row) {
+        return movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+
+      window.rgbData = rgbData = srcRgbArray.filter(function(row) {
+        return !movedSet.has(String(row.Device_ID ?? row.did ?? '') + '|' + String(row.Test_ID ?? row.tid ?? ''));
+      });
+
+      window.qcData = qcData = (window.qcData || qcData || []).concat(undoneRows);
+
+      renderTable('rgb');
+      renderTable('qaqc');
+    })
+    .withFailureHandler(function (err) {
+      if (moveBtn) moveBtn.disabled = false;
+      showToast('Undo failed: ' + (err?.message || err), 'error', 6000);
+    })
+    .syncMoveDataToQC(savedMove.req);
+}
 
 /**
  * Force-load ALL records from the server (bypasses date-range filtering).
@@ -15058,6 +15171,24 @@ function setRgbRowsPerPage(n) {
   window.rgbRowsPerPage = parseInt(n, 10) || 50;
   if (window.pageState) window.pageState['rgb'] = 1;
   if (typeof renderTable === 'function') renderTable('rgb');
+}
+
+function setQaqcRowsPerPage(n) {
+  window.qaqcRowsPerPage = parseInt(n, 10) || 50;
+  if (window.pageState) window.pageState['qaqc'] = 1;
+  if (typeof renderTable === 'function') renderTable('qaqc');
+}
+
+function setQaqcDatePreset(days) {
+  const to = new Date(), from = new Date();
+  from.setDate(from.getDate() - (days - 1));
+  const fmt = d => d.toISOString().split('T')[0];
+  const fEl = document.getElementById('date-qaqc-from');
+  const tEl = document.getElementById('date-qaqc-to');
+  if (fEl) fEl.value = fmt(from);
+  if (tEl) tEl.value = fmt(to);
+  if (window.pageState) window.pageState['qaqc'] = 1;
+  renderTable('qaqc');
 }
 
 function updateRgbMissingChip() {
@@ -16546,9 +16677,10 @@ function computeAutoQCStatus(row) {
 }
 
 
-function getEffectiveQCStatusForDevice(deviceId, autoStatus) {
-    if (qcManualOverrideEnabled[deviceId] && qcManualStatus[deviceId]) {
-        return qcManualStatus[deviceId];
+function getEffectiveQCStatusForDevice(deviceId, testId, autoStatus) {
+    const overrideKey = deviceId + '|' + (testId || '');
+    if (qcManualOverrideEnabled[overrideKey] && qcManualStatus[overrideKey]) {
+        return qcManualStatus[overrideKey];
     }
     return autoStatus;
 }
@@ -17298,6 +17430,20 @@ function renderTable(tab) {
     }
   }
 
+  // Global search filter for QAQC (Bug 4 fix)
+  if (!isRGB) {
+    const globalSearch = (document.getElementById('search-qaqc-global')?.value || '').trim().toLowerCase();
+    if (globalSearch) {
+      filtered = filtered.filter(function(row) {
+        const fields = [
+          row.Device_ID, row.Test_ID, row.Client_ID, row.Farm_ID,
+          row.ProdBatch_ID, row.QCBatch_ID, row.Place, row.State, row.Crop
+        ];
+        return fields.some(function(f) { return f && String(f).toLowerCase().includes(globalSearch); });
+      });
+    }
+  }
+
   // -------------------------------
   // SORT (R3)
   // -------------------------------
@@ -17330,7 +17476,7 @@ function renderTable(tab) {
   // -------------------------------
   const perPage = isRGB
     ? (parseInt(window.rgbRowsPerPage, 10) || (typeof ROWS_PER_PAGE === "number" && ROWS_PER_PAGE > 0 ? ROWS_PER_PAGE : 50))
-    : (typeof ROWS_PER_PAGE === "number" && ROWS_PER_PAGE > 0 ? ROWS_PER_PAGE : 50);
+    : (parseInt(window.qaqcRowsPerPage, 10) || (typeof ROWS_PER_PAGE === "number" && ROWS_PER_PAGE > 0 ? ROWS_PER_PAGE : 50));
   const totalRows = filtered.length;
   const maxPage = Math.ceil(totalRows / perPage) || 1;
   if (pageState[tab] > maxPage) pageState[tab] = maxPage;
@@ -17355,7 +17501,9 @@ function renderTable(tab) {
     `<th class="rgb-th-sortable" onclick="sortRgbTable('${tab}','${col}')" title="Sort by ${label}">${label}${si(col)}</th>`;
 
   // Column visibility (Feature 11) - only for RGB
-  const hiddenCols = (isRGB && window.rgbHiddenCols instanceof Set) ? window.rgbHiddenCols : new Set();
+  const hiddenCols = isRGB
+    ? (window.rgbHiddenCols instanceof Set ? window.rgbHiddenCols : new Set())
+    : (window.qaqcHiddenCols instanceof Set ? window.qaqcHiddenCols : new Set());
   const shv = (col, label) => {
     if (hiddenCols.has(col)) return '';
     return sh(col, label);
@@ -17557,7 +17705,7 @@ function renderTable(tab) {
       if (typeof fillBatchSelectForRow === "function") {
         tdQCBatch.innerHTML = `
           <select class="qc-batch-select-cell" data-id="${String(row.id).replace(/"/g, "&quot;")}"
-            ${cb.checked ? "" : "disabled"}>
+            ${qcChecked ? "" : "disabled"}>
           </select>
         `;
         fillBatchSelectForRow(row.id, curBatchVal);
@@ -18638,11 +18786,12 @@ function renderQCStatus(row) {
 
   const deviceId = row.did;
   const enabled  = (window.qcManualOverrideEnabled &&
-                    window.qcManualOverrideEnabled[deviceId] === true);
+                    window.qcManualOverrideEnabled[deviceId + '|' + (row.Test_ID ?? row.tid ?? '')] === true);
   const manualStatus = (window.qcManualStatus &&
-                        window.qcManualStatus[deviceId]);
+                        window.qcManualStatus[deviceId + '|' + (row.Test_ID ?? row.tid ?? '')]);
 
   input.dataset.deviceId       = deviceId || '';
+  input.dataset.testId         = row.Test_ID ?? row.tid ?? '';
   input.dataset.computedStatus = overallStatus;
 
   toggle.checked = !!enabled;
@@ -20264,7 +20413,7 @@ function getDashboardQcStatus(row) {
     if (!row) return 'NA';
     const deviceId = getDashboardDeviceId(row);
     if (typeof computeAutoQCStatus === 'function' && typeof getEffectiveQCStatusForDevice === 'function') {
-        return getEffectiveQCStatusForDevice(deviceId, computeAutoQCStatus(row));
+        return getEffectiveQCStatusForDevice(deviceId, row.Test_ID ?? row.tid ?? '', computeAutoQCStatus(row));
     }
     const status = String(row.status || row.qcStatus || row.QC_Status || '').toUpperCase();
     return status || 'NA';
@@ -22862,6 +23011,12 @@ function executeRetestMove(req, n) {
       if (skipped) msg += ' Skipped: ' + skipped + '.';
       showToast(msg, 'success', 5000);
 
+      // Store for undo (Bug 6 fix)
+      window.__lastQaqcMove = { req: req.slice(), movedRows: (window.qcData || qcData || []).filter(function(r) {
+        return req.some(function(x) { return x.Device_ID === String(r.Device_ID ?? r.did ?? '') && x.Test_ID === String(r.Test_ID ?? r.tid ?? ''); });
+      }), n: moved, movedAt: Date.now() };
+      showQaqcUndoBar(moved, 30);
+
       // --- Optimistic in-memory update (no second GAS call needed) ---
       const movedSet = new Set(req.map(r => r.Device_ID + '|' + r.Test_ID));
       const srcArray = window.qcData || qcData || [];
@@ -23268,6 +23423,50 @@ function toggleRgbColVis(key) {
     window.rgbHiddenCols.add(key);
   }
   if (typeof renderTable === 'function') renderTable('rgb');
+}
+
+window.qaqcHiddenCols = window.qaqcHiddenCols instanceof Set ? window.qaqcHiddenCols : new Set();
+
+function toggleQaqcColVisPanel() {
+  const panel = document.getElementById('qaqc-col-vis-panel');
+  if (!panel) return;
+  const isActive = panel.style.display !== 'none' && panel.style.display !== '';
+  panel.style.display = isActive ? 'none' : 'flex';
+  if (!isActive) renderQaqcColVisPanel();
+}
+
+function toggleQaqcColVis(key) {
+  window.qaqcHiddenCols = window.qaqcHiddenCols instanceof Set ? window.qaqcHiddenCols : new Set();
+  if (window.qaqcHiddenCols.has(key)) {
+    window.qaqcHiddenCols.delete(key);
+  } else {
+    window.qaqcHiddenCols.add(key);
+  }
+  if (typeof renderTable === 'function') renderTable('qaqc');
+}
+
+function renderQaqcColVisPanel() {
+  const panel = document.getElementById('qaqc-col-vis-panel');
+  if (!panel) return;
+  window.qaqcHiddenCols = window.qaqcHiddenCols instanceof Set ? window.qaqcHiddenCols : new Set();
+  const textCols = [
+    { k: 'Client_ID', label: 'Client_ID' },
+    { k: 'Farm_ID', label: 'Farm_ID' },
+    { k: 'ProdBatch_ID', label: 'ProdBatch_ID' },
+    { k: 'QCBatch_ID', label: 'QCBatch_ID' },
+    { k: 'Device_ID', label: 'Device_ID' },
+    { k: 'Test_ID', label: 'Test_ID' },
+    { k: 'Crop', label: 'Crop' },
+    { k: 'Test_date', label: 'Test_date' },
+    { k: 'Place', label: 'Place' },
+    { k: 'State', label: 'State' }
+  ];
+  const metricCols = Array.isArray(METRIC_COLS_FLAT) ? METRIC_COLS_FLAT : [];
+  const allCols = textCols.concat(metricCols.map(function(c) { return { k: c.k, label: c.label }; }));
+  panel.innerHTML = allCols.map(function(col) {
+    const checked = !window.qaqcHiddenCols.has(col.k);
+    return '<label style="font-size:12px;font-weight:500;color:#166534;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleQaqcColVis(\'' + col.k.replace(/'/g, "\\'") + '\')" style="cursor:pointer;">' + col.label + '</label>';
+  }).join('');
 }
 
 function renderRgbColVisPanel() {
@@ -25075,7 +25274,7 @@ function renderQCComparisonChart() {
     const pctF = totalF ? (passF/totalF*100) : 0;
     
     const totalQ = qcData.length;
-    let passQ = 0; try { passQ = qcData.filter(r => getEffectiveQCStatusForDevice(r.did, computeAutoQCStatus(r)) === 'PASS').length; } catch(e){}
+    let passQ = 0; try { passQ = qcData.filter(r => getEffectiveQCStatusForDevice(r.did, r.Test_ID ?? r.tid ?? '', computeAutoQCStatus(r)) === 'PASS').length; } catch(e){}
     const pctQ = totalQ ? (passQ/totalQ*100) : 0;
 
     if(qcVsTestChart) qcVsTestChart.destroy();
@@ -25180,7 +25379,7 @@ function saveQCBatchAssignments() {
         return;
     }
     selects.forEach(sel => {
-        const id    = parseInt(sel.dataset.id, 10);
+        const id    = String(sel.dataset.id);
         const batch = sel.value && sel.value.trim() ? sel.value.trim() : 'Default';
         const row   = qcData.find(r => r.id === id);
         if (row) {
@@ -25201,6 +25400,7 @@ function toggleQCOverrideMode() {
     if (!toggle || !input || !note) return;
 
     const deviceId       = input.dataset.deviceId;
+    const testId         = input.dataset.testId || '';
     const computedStatus = input.dataset.computedStatus || 'PASS';
 
     if (!deviceId) {
@@ -25210,36 +25410,41 @@ function toggleQCOverrideMode() {
         return;
     }
 
+    const overrideKey = deviceId + '|' + testId;
+
     if (toggle.checked) {
-        qcManualOverrideEnabled[deviceId] = true;
-        if (!qcManualStatus[deviceId]) {
-            qcManualStatus[deviceId] = computedStatus;
+        qcManualOverrideEnabled[overrideKey] = true;
+        if (!qcManualStatus[overrideKey]) {
+            qcManualStatus[overrideKey] = computedStatus;
         }
 
-        input.value   = qcManualStatus[deviceId];
+        input.value   = qcManualStatus[overrideKey];
         input.disabled = false;
         if (saveBtn) saveBtn.disabled = false;
         note.textContent = 'Mode: Manual override active';
         note.style.color = '#e67e22';
     } else {
-        qcManualOverrideEnabled[deviceId] = false;
+        qcManualOverrideEnabled[overrideKey] = false;
         input.value   = computedStatus;
         input.disabled = true;
         if (saveBtn) saveBtn.disabled = true;
         note.textContent = 'Mode: Automatic (from parameter QC)';
         note.style.color = '#888';
     }
+    try { localStorage.setItem('qcManualOverrideEnabled', JSON.stringify(qcManualOverrideEnabled)); } catch(e) {}
 }
-function applyQCOverride() {
     const input  = document.getElementById('qaqc-override-input');
     const toggle = document.getElementById('qaqc-override-toggle');
     const saveBtn = document.getElementById('qaqc-override-save');
     if (!input || !toggle) return;
 
     const deviceId       = input.dataset.deviceId;
+    const testId         = input.dataset.testId || '';
     const computedStatus = input.dataset.computedStatus || 'PASS';
 
     if (!deviceId) return;
+
+    const overrideKey = deviceId + '|' + testId;
 
     if (!toggle.checked) {
         input.value = computedStatus;
@@ -25250,11 +25455,12 @@ function applyQCOverride() {
     let value = input.value.trim().toUpperCase();
     if (value !== 'PASS' && value !== 'FAIL') {
         alert('Please type PASS or FAIL (or disable manual override to use automatic QC status).');
-        const last = qcManualStatus[deviceId] || computedStatus;
+        const last = qcManualStatus[overrideKey] || computedStatus;
         input.value = last;
         return;
     }
-    qcManualStatus[deviceId] = value;
+    qcManualStatus[overrideKey] = value;
+    try { localStorage.setItem('qcManualStatus', JSON.stringify(qcManualStatus)); } catch(e) {}
     renderTable('qaqc');
 }
 
@@ -34157,9 +34363,10 @@ function buildQCCertificateData(row) {
 
   // Manual override info
   const deviceId = row.did;
-  const overrideEnabled = (window.qcManualOverrideEnabled && qcManualOverrideEnabled[deviceId] === true);
-  const manualStatus = (window.qcManualStatus && qcManualStatus[deviceId])
-    ? String(qcManualStatus[deviceId]).toUpperCase()
+  const _overrideKey = deviceId + '|' + (row.Test_ID ?? row.tid ?? '');
+  const overrideEnabled = (window.qcManualOverrideEnabled && qcManualOverrideEnabled[_overrideKey] === true);
+  const manualStatus = (window.qcManualStatus && qcManualStatus[_overrideKey])
+    ? String(qcManualStatus[_overrideKey]).toUpperCase()
     : null;
 
   // Counts
