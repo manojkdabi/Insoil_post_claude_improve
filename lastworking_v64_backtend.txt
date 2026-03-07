@@ -8765,26 +8765,31 @@ function updateRGBLocationData(deviceId, testId, place, gps, state) {
 
     let updated = 0;
 
-    // 1. Update RGB_Data sheet — ensure columns exist first
+    // 1. Ensure Place/GPS/State columns exist on all sheets first, then flush
+    //    so subsequent reads within this execution see the new columns immediately.
     const rgbSheet = ss.getSheetByName('RGB_Data');
+    const qcSheet  = ss.getSheetByName('QC_Data');
+    const stSheet  = ss.getSheetByName('SoilTest_Results');
+
+    if (rgbSheet) ensureLocationColumns_(rgbSheet);
+    if (qcSheet)  ensureLocationColumns_(qcSheet);
+    if (stSheet)  ensureLocationColumns_(stSheet);
+    SpreadsheetApp.flush(); // Commit header additions before reading data below
+
+    // 2. Update RGB_Data sheet
     if (rgbSheet) {
-      ensureLocationColumns_(rgbSheet);
       const rgbUpdated = updateSheetLocation_(rgbSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (rgbUpdated) updated++;
     }
 
-    // 2. Propagate to QC_Data sheet (if row exists)
-    const qcSheet = ss.getSheetByName('QC_Data');
+    // 3. Propagate to QC_Data sheet (if row exists there)
     if (qcSheet) {
-      ensureLocationColumns_(qcSheet);
       const qcUpdated = updateSheetLocation_(qcSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (qcUpdated) updated++;
     }
 
-    // 3. Propagate to SoilTest_Results sheet (if row exists)
-    const stSheet = ss.getSheetByName('SoilTest_Results');
+    // 4. Propagate to SoilTest_Results sheet (if row exists there)
     if (stSheet) {
-      ensureLocationColumns_(stSheet);
       const stUpdated = updateSheetLocation_(stSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (stUpdated) updated++;
     }
@@ -8811,18 +8816,35 @@ function updateRGBLocationData(deviceId, testId, place, gps, state) {
 function ensureLocationColumns_(sheet) {
   if (!sheet) return;
   try {
+    const lastRow = sheet.getLastRow();
     const lastCol = sheet.getLastColumn();
-    if (lastCol < 1) return;
-    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const upperHeaders = headers.map(function(h) { return String(h).trim().toUpperCase(); });
+    if (lastCol < 1 || lastRow < 1) return;
 
-    const LOCATION_COLS = { PLACE: 'Place', GPS: 'GPS', STATE: 'State' };
-    var nextCol = lastCol + 1;
+    // Normalize header for comparison — handles Device_ID, Device ID, DeviceID, etc.
+    const normH = function(h) { return String(h || '').trim().toLowerCase().replace(/[\s_.-]/g, ''); };
+
+    // Detect the header row dynamically (search first 10 rows for Device_ID + Test_ID)
+    const scanRows = Math.min(10, lastRow);
+    const scanData = sheet.getRange(1, 1, scanRows, lastCol).getDisplayValues();
+    let headerRowNum = 1; // 1-based, default to row 1
+    for (let i = 0; i < scanData.length; i++) {
+      let rowStr = scanData[i].map(normH).join(' ');
+      if (rowStr.indexOf('deviceid') >= 0 && rowStr.indexOf('testid') >= 0) {
+        headerRowNum = i + 1; // convert 0-based to 1-based
+        break;
+      }
+    }
+
+    const headers = scanData[headerRowNum - 1]; // 0-based index
+    const normHeaders = headers.map(normH);
+
+    const LOCATION_COLS = { 'place': 'Place', 'gps': 'GPS', 'state': 'State' };
+    let nextCol = lastCol + 1;
     Object.keys(LOCATION_COLS).forEach(function(key) {
-      if (upperHeaders.indexOf(key) === -1) {
-        sheet.getRange(1, nextCol).setValue(LOCATION_COLS[key]);
+      if (normHeaders.indexOf(key) === -1) {
+        sheet.getRange(headerRowNum, nextCol).setValue(LOCATION_COLS[key]);
         nextCol++;
-        Logger.log('ensureLocationColumns_: Added %s column to %s', LOCATION_COLS[key], sheet.getName());
+        Logger.log('ensureLocationColumns_: Added %s column to %s (header row %d)', LOCATION_COLS[key], sheet.getName(), headerRowNum);
       }
     });
   } catch (e) {
@@ -8933,48 +8955,68 @@ function clearRGBLocationBatch(pairs) {
 function updateSheetLocation_(sheet, deviceId, testId, place, gps, state) {
   if (!sheet) return false;
 
-  const data = sheet.getDataRange().getValues();
+  // Use getDisplayValues() so string representations match what getRGBDataFormatted_ returns
+  // (avoids number-vs-string mismatches when Device_ID is stored as a numeric cell)
+  const data = sheet.getDataRange().getDisplayValues();
   if (data.length < 2) return false;
 
-  const headers = data[0];
-  
-  // Find column indices
-  const deviceIdIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'DEVICE_ID');
-  const testIdIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'TEST_ID');
-  const placeIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'PLACE');
-  const gpsIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'GPS');
-  const stateIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'STATE');
+  // Normalize header for comparison — handles Device_ID, Device ID, DeviceID, etc.
+  const normH = function(h) { return String(h || '').trim().toLowerCase().replace(/[\s_.-]/g, ''); };
+
+  // Detect header row dynamically (same logic as getRGBDataFormatted_)
+  let headerRowIdx = 0; // 0-based, default to first row
+  for (let hi = 0; hi < Math.min(10, data.length); hi++) {
+    let rowStr = data[hi].map(normH).join(' ');
+    if (rowStr.indexOf('deviceid') >= 0 && rowStr.indexOf('testid') >= 0) {
+      headerRowIdx = hi;
+      break;
+    }
+  }
+
+  const headers = data[headerRowIdx];
+
+  // Find column indices with robust normalization
+  const deviceIdIdx = headers.findIndex(function(h) { return normH(h) === 'deviceid'; });
+  const testIdIdx   = headers.findIndex(function(h) { return normH(h) === 'testid'; });
+  const placeIdx    = headers.findIndex(function(h) { return normH(h) === 'place'; });
+  const gpsIdx      = headers.findIndex(function(h) { return normH(h) === 'gps'; });
+  const stateIdx    = headers.findIndex(function(h) { return normH(h) === 'state'; });
 
   if (deviceIdIdx === -1 || testIdIdx === -1) {
     Logger.log('updateSheetLocation_: %s missing Device_ID or Test_ID column', sheet.getName());
     return false;
   }
 
-  // Search for matching row
-  for (let i = 1; i < data.length; i++) {
-    const rowDeviceId = String(data[i][deviceIdIdx] || '').trim();
-    const rowTestId = String(data[i][testIdIdx] || '').trim();
+  const deviceIdStr = String(deviceId || '').trim();
+  const testIdStr   = String(testId   || '').trim();
 
-    if (rowDeviceId === deviceId && rowTestId === testId) {
+  // Search for matching row (start after header row)
+  for (let i = headerRowIdx + 1; i < data.length; i++) {
+    const rowDeviceId = String(data[i][deviceIdIdx] || '').trim();
+    const rowTestId   = String(data[i][testIdIdx]   || '').trim();
+
+    if (rowDeviceId && rowDeviceId === deviceIdStr &&
+        rowTestId   && rowTestId   === testIdStr) {
       // Update Place, GPS, State columns if they exist
       // Note: empty string is a valid value (used to clear the field)
       let cellsUpdated = 0;
-      
+      const sheetRowNum = i + 1; // convert 0-based to 1-based
+
       if (placeIdx !== -1) {
-        sheet.getRange(i + 1, placeIdx + 1).setValue(place);
+        sheet.getRange(sheetRowNum, placeIdx + 1).setValue(place);
         cellsUpdated++;
       }
       if (gpsIdx !== -1) {
-        sheet.getRange(i + 1, gpsIdx + 1).setValue(gps);
+        sheet.getRange(sheetRowNum, gpsIdx + 1).setValue(gps);
         cellsUpdated++;
       }
       if (stateIdx !== -1) {
-        sheet.getRange(i + 1, stateIdx + 1).setValue(state);
+        sheet.getRange(sheetRowNum, stateIdx + 1).setValue(state);
         cellsUpdated++;
       }
 
-      Logger.log('updateSheetLocation_: %s - Updated row %d (%d cells)', 
-        sheet.getName(), i + 1, cellsUpdated);
+      Logger.log('updateSheetLocation_: %s - Updated row %d (%d cells)',
+        sheet.getName(), sheetRowNum, cellsUpdated);
       return true;
     }
   }

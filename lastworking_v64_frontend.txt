@@ -25001,9 +25001,18 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
     google.script.run
         .withSuccessHandler(function(result) {
             if (result && result.success) {
-                console.log('[RGB Location] ✅ Location data saved successfully to %d sheet(s)', result.sheetsUpdated || 0);
+                const updated = result.sheetsUpdated || 0;
+                if (updated > 0) {
+                    console.log('[RGB Location] ✅ Location saved to %d sheet(s)', updated);
+                } else {
+                    // Row not found in any sheet — warn the user visibly
+                    console.warn('[RGB Location] ⚠ Location saved in UI but row not found in sheet (Device_ID=%s, Test_ID=%s). sheetsUpdated=0', deviceId, testId);
+                    if (typeof showToast === 'function') {
+                        showToast('⚠ Location saved in view. Sheet not updated — row not found. Try reloading data (📡 Load All).', 'warning', 7000);
+                    }
+                }
             } else {
-                console.error('[RGB Location] Failed to save:', result?.error);
+                console.error('[RGB Location] Failed to save:', result && result.error);
                 if (typeof showToast === 'function') {
                     showToast('Failed to save location data to sheet', 'error');
                 }
