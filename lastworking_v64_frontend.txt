@@ -7805,10 +7805,11 @@
                 <option value="50" selected>50/page</option>
                 <option value="100">100/page</option>
               </select>
-              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(1)">Today</button>
-              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(7)">7d</button>
-              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(30)">30d</button>
-              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset(90)">90d</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset('today')">Today</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset('7d')">Last 7d</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset('30d')">Last 30d</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset('month')">This Month</button>
+              <button class="btn btn-outline" style="font-size:11px;padding:2px 7px;" onclick="setQaqcDatePreset('all')">All</button>
             </div>
             <div id="qaqc-progress-bar" role="alert" style="display:none; align-items:center; gap:8px; padding:6px 12px; background:#fef3c7; border:1px solid #fbbf24; border-radius:6px; font-size:12px; color:#92400e; margin-top:4px; flex-wrap:wrap;">
               <span id="qaqc-progress-msg"></span>
@@ -15194,14 +15195,34 @@ function setQaqcRowsPerPage(n) {
   if (typeof renderTable === 'function') renderTable('qaqc');
 }
 
-function setQaqcDatePreset(days) {
-  const to = new Date(), from = new Date();
-  from.setDate(from.getDate() - (days - 1));
-  const fmt = d => d.toISOString().split('T')[0];
+function setQaqcDatePreset(preset) {
   const fEl = document.getElementById('date-qaqc-from');
   const tEl = document.getElementById('date-qaqc-to');
-  if (fEl) fEl.value = fmt(from);
-  if (tEl) tEl.value = fmt(to);
+  if (!fEl || !tEl) return;
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0, 10);
+  if (preset === 'today' || preset === 1) {
+    fEl.value = fmt(today);
+    tEl.value = fmt(today);
+  } else if (preset === '7d' || preset === 7) {
+    const d = new Date(today); d.setDate(d.getDate() - 6);
+    fEl.value = fmt(d);
+    tEl.value = fmt(today);
+  } else if (preset === '30d' || preset === 30) {
+    const d = new Date(today); d.setDate(d.getDate() - 29);
+    fEl.value = fmt(d);
+    tEl.value = fmt(today);
+  } else if (preset === 'month') {
+    fEl.value = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+    tEl.value = fmt(today);
+  } else if (preset === 'all') {
+    fEl.value = '';
+    tEl.value = '';
+  } else if (typeof preset === 'number') {
+    const d = new Date(today); d.setDate(d.getDate() - (preset - 1));
+    fEl.value = fmt(d);
+    tEl.value = fmt(today);
+  }
   if (window.pageState) window.pageState['qaqc'] = 1;
   renderTable('qaqc');
 }
