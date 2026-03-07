@@ -14337,6 +14337,9 @@ function fetchOperationalDataOnce(options = {}) {
       try {
         if (res && res.rgbData) rgbData = res.rgbData;
         if (res && res.qcData) qcData = res.qcData;
+        // Keep window.* in sync so saveRGBLocationData optimistic update and renderTable both read the same array
+        window.rgbData = rgbData;
+        window.qcData = qcData;
 
         window.__opDataLastAt = Date.now();
         window.__rgbServerMode = (serverDays !== null) ? 'range' : 'all';
@@ -15041,6 +15044,9 @@ function loadOperationalData(opts = {}) {
         } else {
           qcData = Array.isArray(qcData) ? qcData : [];
         }
+        // Keep window.* in sync so saveRGBLocationData optimistic update and renderTable both read the same array
+        window.rgbData = rgbData;
+        window.qcData = qcData;
 
         normalizeMetaDefaults_(rgbData);
         normalizeMetaDefaults_(qcData);
@@ -15202,6 +15208,9 @@ function loadOperationalDataRecent(opts = {}) {
         
         if (res && res.rgbData) rgbData = res.rgbData;
         if (res && res.qcData) qcData = res.qcData;
+        // Keep window.* in sync so saveRGBLocationData optimistic update and renderTable both read the same array
+        window.rgbData = rgbData;
+        window.qcData = qcData;
 
         normalizeMetaDefaults_(rgbData);
         normalizeMetaDefaults_(qcData);
@@ -24873,11 +24882,17 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
 
     console.log(`[RGB Location] Saving location for ${deviceId}/${testId}: Place=${place}, GPS=${gps}, State=${state}`);
 
-    // Optimistic in-memory update — update window.rgbData immediately so the
+    // Optimistic in-memory update — update rgbData immediately so the
     // Raw RGB Data panel reflects the new values even before (or if) the backend
     // call succeeds.  This prevents Place/GPS/State from disappearing when the
     // user toggles between the Calculated Metrics and Raw RGB Data views.
-    (window.rgbData || []).forEach(function(r) {
+    // NOTE: use the module-level `rgbData` let variable as the primary target —
+    // this is what renderTable() and renderRawSelection() both read from.
+    // Also patch window.rgbData (kept in sync after fetchOperationalDataOnce fix,
+    // but guarded here for safety in case they ever diverge).
+    const _rgbArr = (typeof rgbData !== 'undefined' && Array.isArray(rgbData)) ? rgbData
+                  : (window.rgbData || []);
+    _rgbArr.forEach(function(r) {
         const did = String(r.Device_ID ?? r.did ?? '');
         const tid = String(r.Test_ID   ?? r.tid ?? '');
         if (did === String(deviceId) && tid === String(testId)) {
