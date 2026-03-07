@@ -8746,7 +8746,7 @@ function getLocationInfoForTest_(deviceId, testId) {
  * Update Place, GPS, State for a specific RGB_Data row (Device_ID + Test_ID pair)
  * Also propagates to QC_Data and SoilTest_Results sheets if matching rows exist
  */
-function updateRGBLocationData_(deviceId, testId, place, gps, state) {
+function updateRGBLocationData(deviceId, testId, place, gps, state) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const deviceIdStr = String(deviceId || '').trim();
@@ -8760,7 +8760,7 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
     const gpsStr = String(gps || '').trim();
     const stateStr = String(state || '').trim();
 
-    Logger.log('updateRGBLocationData_: Updating Device_ID=%s Test_ID=%s Place=%s GPS=%s State=%s',
+    Logger.log('updateRGBLocationData: Updating Device_ID=%s Test_ID=%s Place=%s GPS=%s State=%s',
       deviceId, testId, placeStr, gpsStr, stateStr);
 
     let updated = 0;
@@ -8789,7 +8789,7 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
       if (stUpdated) updated++;
     }
 
-    Logger.log('updateRGBLocationData_: Updated %d sheet(s)', updated);
+    Logger.log('updateRGBLocationData: Updated %d sheet(s)', updated);
     
     return {
       success: true,
@@ -8798,7 +8798,7 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
     };
 
   } catch (e) {
-    Logger.log('updateRGBLocationData_: Error: %s', e.message);
+    Logger.log('updateRGBLocationData: Error: %s', e.message);
     return { success: false, error: e.message };
   }
 }
@@ -8844,7 +8844,7 @@ function ensureLocationColumns_(sheet) {
  * This function does NOT call requireRole_() so it is accessible to unregistered callers.
  * It is safe because only the script owner can elevate themselves; all others are rejected.
  */
-function registerCurrentUser_() {
+function registerCurrentUser() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const callerEmail = (Session.getActiveUser().getEmail() || '').toLowerCase().trim();
@@ -8858,7 +8858,7 @@ function registerCurrentUser_() {
       usersSheet = ss.insertSheet('Users');
       usersSheet.appendRow(['Name', 'Email', 'Department', 'Role', 'Status', 'Created']);
       usersSheet.setFrozenRows(1);
-      Logger.log('registerCurrentUser_: Created Users sheet');
+      Logger.log('registerCurrentUser: Created Users sheet');
     }
 
     const data = usersSheet.getDataRange().getValues();
@@ -8888,11 +8888,11 @@ function registerCurrentUser_() {
     const now = new Date();
     const displayName = callerEmail.split('@')[0];
     usersSheet.appendRow([displayName, callerEmail, 'Operations', 'admin', 'active', now.toISOString()]);
-    Logger.log('registerCurrentUser_: Registered %s as admin', callerEmail);
+    Logger.log('registerCurrentUser: Registered %s as admin', callerEmail);
     return { ok: true, registered: true, email: callerEmail, role: 'admin' };
 
   } catch (e) {
-    Logger.log('registerCurrentUser_ error: %s', e.message);
+    Logger.log('registerCurrentUser error: %s', e.message);
     return { ok: false, error: e.message };
   }
 }
@@ -8903,7 +8903,7 @@ function registerCurrentUser_() {
  * in the RGB module starts with a blank location (user must re-enter Place).
  * @param {Array<{Device_ID:string, Test_ID:string}>} pairs
  */
-function clearRGBLocationBatch_(pairs) {
+function clearRGBLocationBatch(pairs) {
   try {
     if (!Array.isArray(pairs) || !pairs.length) return { ok: true, cleared: 0 };
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -8918,10 +8918,10 @@ function clearRGBLocationBatch_(pairs) {
         cleared++;
       }
     });
-    Logger.log('clearRGBLocationBatch_: Cleared %d row(s)', cleared);
+    Logger.log('clearRGBLocationBatch: Cleared %d row(s)', cleared);
     return { ok: true, cleared: cleared };
   } catch (e) {
-    Logger.log('clearRGBLocationBatch_ error: %s', e.message);
+    Logger.log('clearRGBLocationBatch error: %s', e.message);
     return { ok: false, error: e.message };
   }
 }

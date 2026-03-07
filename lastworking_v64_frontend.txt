@@ -22075,13 +22075,13 @@ if (typeof safeUpdateQaqcActionButtons === "function") safeUpdateQaqcActionButto
               showToast('✅ Account registered' + (reg.already ? ' (already existed)' : '') + '. Retrying Move to QC…', 'success', 3000);
               setTimeout(function() { moveDataToQC(); }, 1500);
             } else {
-              showToast('Move failed: ' + msg + '\n\nTo fix: open the Apps Script editor and run registerCurrentUser_() once.', 'error', 10000);
+              showToast('Move failed: ' + msg + '\n\nTo fix: open the Apps Script editor and run registerCurrentUser() once.', 'error', 10000);
             }
           })
           .withFailureHandler(function() {
-            showToast('Move failed: ' + msg + '\n\nTo fix: open the Apps Script editor and run registerCurrentUser_() once.', 'error', 10000);
+            showToast('Move failed: ' + msg + '\n\nTo fix: open the Apps Script editor and run registerCurrentUser() once.', 'error', 10000);
           })
-          .registerCurrentUser_();
+          .registerCurrentUser();
       } else {
         showToast('Move failed: ' + msg, 'error', 6000);
       }
@@ -22173,7 +22173,7 @@ Skipped (not found / duplicate): ${skipped}`;
         });
         // Persist the clearing to the RGB_Data sheet
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-          google.script.run.clearRGBLocationBatch_(movedPairs);
+          google.script.run.clearRGBLocationBatch(movedPairs);
         }
 
         renderTable('rgb');
@@ -24910,7 +24910,7 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
                 showToast('Error saving location: ' + (error.message || 'Unknown error'), 'error');
             }
         })
-        .updateRGBLocationData_(deviceId, testId, place, gps, state);
+        .updateRGBLocationData(deviceId, testId, place, gps, state);
 }
 
 // Initialize autocomplete for all place inputs in RGB metrics table
