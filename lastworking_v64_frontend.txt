@@ -24875,17 +24875,6 @@ function saveRGBLocationData(deviceId, testId, place, gps, state) {
         return;
     }
 
-    // Guard: if the backend function is not yet deployed the GAS proxy will not
-    // expose it as a callable property and calling it throws a TypeError.  Detect
-    // this early and show a clear actionable message instead of a raw crash.
-    if (typeof google.script.run.updateRGBLocationData_ !== 'function') {
-        console.error('[RGB Location] Backend function updateRGBLocationData_ not found. Please deploy backend_MN_v1 and reload.');
-        if (typeof showToast === 'function') {
-            showToast('⚠ Location saved locally. Please deploy backend_MN_v1 to persist.', 'warn', 8000);
-        }
-        return;
-    }
-
     google.script.run
         .withSuccessHandler(function(result) {
             if (result && result.success) {
