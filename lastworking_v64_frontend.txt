@@ -6222,6 +6222,62 @@
       outline: 2px solid #9bd3ae;
     }
 
+    /* Enhancement 3: Trend sparkline cell in QC status table */
+    .qc-trend-cell { width: 72px; padding: 2px 4px !important; vertical-align: middle; }
+    .qc-trend-svg  { display: block; }
+
+    /* Enhancement 5: Why FAIL inline tooltip */
+    .qc-why-fail-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24;
+      font-size: 0.65rem; font-weight: 700; cursor: pointer; margin-left: 5px;
+      line-height: 1; vertical-align: middle; flex-shrink: 0;
+    }
+    .qc-why-fail-btn:hover { background: #f5c6cb; }
+    .qc-why-fail-row td {
+      font-size: 0.73rem; color: #721c24; background: rgba(248,215,218,0.35);
+      padding: 2px 8px 4px 8px !important; font-style: italic;
+    }
+
+    /* Enhancement 7: Batch comparison chips above histogram */
+    #qaqc-hist-batch-tabs {
+      display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 6px 0;
+    }
+    .qc-hist-batch-chip {
+      padding: 2px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 600;
+      cursor: pointer; border: 1px solid #cbd5e1; background: #f1f5f9; color: #475569;
+      transition: background .15s, color .15s;
+    }
+    .qc-hist-batch-chip.chip-active {
+      background: #1e40af; color: #fff; border-color: #1e40af;
+    }
+    .qc-hist-batch-chip:hover:not(.chip-active) { background: #e2e8f0; }
+
+    /* Enhancement 8: Manual override pill in summary strip */
+    .qaqc-override-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 12px; font-size: 0.72rem; font-weight: 700;
+    }
+    .qaqc-override-pill.override-pass { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .qaqc-override-pill.override-fail { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    /* Lock icon in QAQC table rows */
+    .qc-override-lock { font-size: 0.7rem; margin-left: 3px; vertical-align: middle; opacity: 0.75; cursor: default; }
+
+    /* Enhancement 10: AI markdown rendering */
+    #qaqc-ai-content { white-space: normal !important; }
+    #qaqc-ai-content .ai-section-title {
+      font-weight: 700; font-size: 0.78rem; margin: 6px 0 2px 0; color: #1e3a5f;
+    }
+    #qaqc-ai-content .ai-risk-badge {
+      display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.7rem; font-weight: 700;
+    }
+    #qaqc-ai-content .ai-risk-high   { background: #f8d7da; color: #721c24; }
+    #qaqc-ai-content .ai-risk-medium { background: #fff3cd; color: #856404; }
+    #qaqc-ai-content .ai-risk-low    { background: #d4edda; color: #155724; }
+    #qaqc-ai-content ul { margin: 2px 0 2px 14px; padding: 0; }
+    #qaqc-ai-content li { margin-bottom: 1px; font-size: 0.77rem; color: #374151; }
+
 
 
     //----------------------------------------------------------START OF NEW CSS -----------------------------------------------------------
@@ -8017,6 +8073,7 @@
                       <th>Value</th>
                       <th>Min Limit</th>
                       <th>Max Limit</th>
+                      <th title="Last 10 values trend for this device+parameter">Trend</th>
                     </tr>
                   </thead>
                   <tbody id="body-qaqc-status"></tbody>
@@ -8049,6 +8106,8 @@
                   </button>
                 </div>
               </div>
+
+              <div id="qaqc-hist-batch-tabs" style="display:none;"></div>
 
               <div class="qaqc-hist-plot">
                 <canvas id="c-qc-hist"></canvas>
@@ -17872,7 +17931,24 @@ function renderTable(tab) {
     } // end if (!hiddenCols.has('QCBatch_ID'))
 
     // 5) Device/Test/Date
-    if (!hiddenCols.has('Device_ID')) tr.insertCell().innerText = normStr(row.Device_ID ?? row.did);
+    if (!hiddenCols.has('Device_ID')) {
+      const tdDev = tr.insertCell();
+      const devText = normStr(row.Device_ID ?? row.did);
+      // Enhancement 8: show 🔒 lock icon if this row has an active manual override
+      if (!isRGB) {
+        const _ov8Key2 = devText + '|' + normStr(row.Test_ID ?? row.tid);
+        const _ov8Active = !!(window.qcManualOverrideEnabled && window.qcManualOverrideEnabled[_ov8Key2]);
+        if (_ov8Active) {
+          const _ov8Status2 = (window.qcManualStatus && window.qcManualStatus[_ov8Key2])
+            ? String(window.qcManualStatus[_ov8Key2]).toUpperCase() : '';
+          tdDev.innerHTML = devText + `<span class="qc-override-lock" title="Manual override active: ${_ov8Status2}">🔒</span>`;
+        } else {
+          tdDev.innerText = devText;
+        }
+      } else {
+        tdDev.innerText = devText;
+      }
+    }
     if (!hiddenCols.has('Test_ID')) tr.insertCell().innerText = normStr(row.Test_ID ?? row.tid);
     if (!hiddenCols.has('Crop')) tr.insertCell().innerText = normStr(row.crop ?? row.Crop ?? row.CropID);
     if (!hiddenCols.has('Test_date')) tr.insertCell().innerText = (typeof formatDateCell === "function")
@@ -18838,13 +18914,106 @@ function renderQCStatus(row) {
 
     tr.innerHTML =
       `<td>${esc(c.n || c.k)}</td>` +
-      `<td class="${style}" title="${toTitleAttr(tip)}">${esc(status)}</td>` +
+      `<td class="${style}" title="${toTitleAttr(tip)}">${esc(status)}${status === 'FAIL' ? '<button class="qc-why-fail-btn" type="button" title="Why FAIL?">ⓘ</button>' : ''}</td>` +
       `<td>${Number.isFinite(val) ? val.toFixed(3) : 'NA'}</td>` +
       `<td>${criteria ? esc(criteria.min) : '0'}</td>` +
-      `<td>${criteria ? esc(criteria.max) : '0'}</td>`;
+      `<td>${criteria ? esc(criteria.max) : '0'}</td>` +
+      `<td class="qc-trend-cell" id="qc-trend-${c.k.replace(/[^a-zA-Z0-9]/g,'_')}"></td>`;
 
+    // After setting innerHTML, wire up the why-fail button (Enhancement 5)
+    if (status === 'FAIL') {
+      const btn = tr.querySelector('.qc-why-fail-btn');
+      if (btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const existing = tbody.querySelector(`.qc-why-fail-row[data-param="${c.k}"]`);
+          if (existing) { existing.remove(); return; }
+          // Remove any other open why-fail rows
+          tbody.querySelectorAll('.qc-why-fail-row').forEach(r => r.remove());
+          const expRow = document.createElement('tr');
+          expRow.className = 'qc-why-fail-row';
+          expRow.dataset.param = c.k;
+          // Compute z-score
+          let zText = '';
+          try {
+            const bStats = (typeof computeBatchParamStats === 'function')
+              ? computeBatchParamStats(batchId, 2, 2)
+              : null;
+            const st = bStats && bStats[c.k];
+            if (st && Number.isFinite(st.mean) && Number.isFinite(st.sd) && st.sd > 0 && Number.isFinite(val)) {
+              const z = (val - st.mean) / st.sd;
+              zText = ` | z = ${z >= 0 ? '+' : ''}${z.toFixed(2)}σ`;
+            }
+          } catch(ze) {}
+          let reason = '';
+          if (criteria && Number.isFinite(val)) {
+            if (val < criteria.min) {
+              const delta = (criteria.min - val).toFixed(3);
+              reason = `Below MIN limit by ${delta}${zText}`;
+            } else {
+              const delta = (val - criteria.max).toFixed(3);
+              reason = `Above MAX limit by ${delta}${zText}`;
+            }
+          } else {
+            reason = 'No criteria defined for this batch' + zText;
+          }
+          expRow.innerHTML = `<td colspan="6">${esc(reason)}</td>`;
+          tr.after(expRow);
+        });
+      }
+    }
+
+    // Enhancement 3: Render trend sparkline (deferred — data collected in array first)
     tbody.appendChild(tr);
   });
+
+  // Enhancement 3: Render trend sparklines for all parameter rows after tbody build
+  (function _renderQcTrendSparklines() {
+    try {
+      const devId = row.did || row.Device_ID || '';
+      if (!devId || !Array.isArray(qcData)) return;
+      // Get all QC rows for this device, sorted by date
+      const devRows = qcData
+        .filter(r => (r.did || r.Device_ID) === devId)
+        .sort((a, b) => {
+          const da = new Date(a.Test_date || a.time || 0).getTime();
+          const db = new Date(b.Test_date || b.time || 0).getTime();
+          return da - db;
+        });
+      (Array.isArray(cols) ? cols : []).forEach(c => {
+        if (!c || !c.k) return;
+        const cellId = `qc-trend-${c.k.replace(/[^a-zA-Z0-9]/g,'_')}`;
+        const cell = tbody.querySelector(`#${cellId}`);
+        if (!cell) return;
+        // Get last 10 values for this parameter
+        const vals = devRows.map(r => {
+          try { return getQCObservedValue(r, c.k); } catch(e) { return NaN; }
+        }).filter(v => Number.isFinite(v)).slice(-10);
+        if (vals.length < 2) { cell.textContent = '–'; return; }
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+        const range = max - min || 1;
+        const W = 64, H = 18, PAD = 2;
+        const xs = vals.map((_, i) => PAD + i * (W - PAD * 2) / (vals.length - 1));
+        const ys = vals.map(v => H - PAD - (v - min) / range * (H - PAD * 2));
+        const pts = xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+        // Criteria bounds for color
+        let critMin = null, critMax = null;
+        try { const cr = getCriteria(c.k); if (cr) { critMin = Number(cr.min); critMax = Number(cr.max); } } catch(e) {}
+        // Current val pixel
+        const curVal = vals[vals.length - 1];
+        const curX = xs[xs.length - 1];
+        const curY = ys[ys.length - 1];
+        const isFail = Number.isFinite(critMin) && Number.isFinite(critMax)
+          && (curVal < critMin || curVal > critMax);
+        const lineColor = isFail ? '#dc3545' : '#28a745';
+        cell.innerHTML = `<svg class="qc-trend-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+          <polyline points="${pts}" fill="none" stroke="${lineColor}" stroke-width="1.4" stroke-linejoin="round"/>
+          <circle cx="${curX.toFixed(1)}" cy="${curY.toFixed(1)}" r="2.5" fill="${lineColor}"/>
+        </svg>`;
+      });
+    } catch(e) { console.warn('QC trend sparklines failed:', e); }
+  })();
 
   // Render parameter badge row (Enhancement 2)
   if (typeof renderQcParamBadges === 'function') {
@@ -18864,6 +19033,16 @@ function renderQCStatus(row) {
           .replace(/'/g, '&#39;'));
 
     const overallCls = (overallStatus === 'PASS') ? 'pass' : 'fail';
+
+    // Enhancement 8: check override status for this row to show pill
+    const _ov8Key = (row.did || '') + '|' + (row.Test_ID ?? row.tid ?? '');
+    const _ov8Enabled = !!(window.qcManualOverrideEnabled && window.qcManualOverrideEnabled[_ov8Key]);
+    const _ov8Status = _ov8Enabled && window.qcManualStatus && window.qcManualStatus[_ov8Key]
+      ? String(window.qcManualStatus[_ov8Key]).toUpperCase() : '';
+    const _ov8Pill = _ov8Enabled && _ov8Status
+      ? `<span class="qaqc-override-pill override-${_ov8Status === 'PASS' ? 'pass' : 'fail'}">🔒 OVERRIDE: ${_ov8Status}</span>`
+      : '';
+
     sumEl.innerHTML = `
       <div class="qaqc-summary-left">
         <div class="qaqc-summary-row pills-row">
@@ -18872,6 +19051,7 @@ function renderQCStatus(row) {
           <span class="qaqc-pill pass">PASS: ${passCount}</span>
           <span class="qaqc-pill fail">FAIL: ${failCount}</span>
           <span class="qaqc-pill">TOTAL: ${passCount + failCount}</span>
+          ${_ov8Pill}
         </div>
         <div class="qaqc-summary-row">
           <span>Batch: <b>${esc(batchId)}</b></span>
@@ -19000,6 +19180,21 @@ function renderQCStatus(row) {
   if (b2) b2.disabled = false;
   if (b3) b3.disabled = false;
   if (b4) b4.disabled = false;
+
+  // Enhancement 10: auto-trigger AI diagnostics when overall status is FAIL
+  if (overallStatus === 'FAIL' && typeof requestQcDiagnostics === 'function') {
+    // Clear any existing pending auto-trigger
+    if (window._qcAiAutoTriggerTimer) clearTimeout(window._qcAiAutoTriggerTimer);
+    const _aiRow = row;
+    window._qcAiAutoTriggerTimer = setTimeout(function() {
+      // Only auto-trigger if the same row is still active
+      if (window.currentQCRowForCert === _aiRow) {
+        const aiContent = document.getElementById('qaqc-ai-content');
+        if (aiContent) aiContent.textContent = '⏳ Auto-analysing FAIL result…';
+        requestQcDiagnostics(_aiRow);
+      }
+    }, 1500);
+  }
 }
 
 function updateQCHistogram(paramKey, selectedVal, batchId) {
@@ -19037,6 +19232,9 @@ function updateQCHistogram(paramKey, selectedVal, batchId) {
     const sdTag = criteriaSd ? ` | Criteria: ±${criteriaSd}σ` : '';
     metaEl.textContent = `Batch: ${targetBatch} | n = ${values.length}${sdTag}`;
   }
+
+  // Enhancement 7: render batch comparison chips
+  if (typeof renderQcHistBatchTabs === 'function') renderQcHistBatchTabs(targetBatch);
 
   const ctx = canvas.getContext('2d');
 
@@ -25800,6 +25998,10 @@ function applyQCOverride() {
     // Enhancement #10: persist to QC_Data sheet
     _persistQCOverrideToSheet(deviceId, testId, value, true);
     renderTable('qaqc');
+    // Enhancement 8: refresh status summary strip to show override pill immediately
+    if (typeof renderQCStatus === 'function' && window.currentQCRowForCert) {
+      renderQCStatus(window.currentQCRowForCert);
+    }
 }
 
 // =========================================
@@ -35065,6 +35267,55 @@ function toggleQcHistLogScale() {
   }
 }
 
+// ====================================================
+// QC Status View – Enhancement 7: Batch comparison chips above histogram
+// ====================================================
+function renderQcHistBatchTabs(activeBatchId) {
+  const wrap = document.getElementById('qaqc-hist-batch-tabs');
+  if (!wrap) return;
+
+  // Collect distinct batch IDs from qcData
+  const batches = [];
+  const seen = new Set();
+  (qcData || []).forEach(r => {
+    const b = (typeof getQCBatchIdFromRow === 'function') ? getQCBatchIdFromRow(r) : 'Default';
+    if (b && !seen.has(b)) { seen.add(b); batches.push(b); }
+  });
+
+  if (batches.length <= 1) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'flex';
+  const active = activeBatchId || window.currentQCBatchId || batches[0] || 'Default';
+  wrap.innerHTML = batches.map(b => {
+    const isActive = (b === active);
+    const enc = encodeURIComponent(b);
+    return `<button type="button" class="qc-hist-batch-chip${isActive ? ' chip-active' : ''}"
+      onclick="switchQcHistBatch(decodeURIComponent('${enc}'))">${b}</button>`;
+  }).join('');
+}
+
+function switchQcHistBatch(batchId) {
+  window.currentQCBatchId = batchId;
+  // Update active chip
+  const wrap = document.getElementById('qaqc-hist-batch-tabs');
+  if (wrap) {
+    wrap.querySelectorAll('.qc-hist-batch-chip').forEach(c => {
+      c.classList.toggle('chip-active', c.textContent.trim() === batchId);
+    });
+  }
+  // Redraw histogram
+  if (typeof updateQCHistogram === 'function' && window.currentQCParamKey) {
+    const row = window.currentQCRowForCert;
+    const val = (row && typeof getQCObservedValue === 'function')
+      ? getQCObservedValue(row, window.currentQCParamKey) : null;
+    updateQCHistogram(
+      window.currentQCParamKey,
+      Number.isFinite(val) ? val : null,
+      batchId
+    );
+  }
+}
+
 
 function exportQCCertificateCSV() {
   try {
@@ -36126,32 +36377,43 @@ function renderQcAiPanel(diag) {
   if (!box) return;
 
   if (!diag) {
-    box.textContent = 'AI diagnostics not available for this QC row.';
+    box.innerHTML = '<span style="color:#888;">AI diagnostics not available for this QC row.</span>';
     return;
   }
 
+  // Enhancement 10: markdown-style HTML rendering
+  const esc = (typeof escapeHtml === 'function')
+    ? escapeHtml
+    : (x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+
   const summary = diag.summary || 'No summary.';
   const risk = (diag.riskLevel || 'medium').toString().toLowerCase();
+  const riskLabel = risk === 'high' ? '🔴 High' : (risk === 'low' ? '🟢 Low' : '🟡 Medium');
+  const riskClass = 'ai-risk-badge ai-risk-' + (risk === 'high' ? 'high' : (risk === 'low' ? 'low' : 'medium'));
 
   const causesArr = Array.isArray(diag.likelyCauses) ? diag.likelyCauses : [];
-  const stepsArr = Array.isArray(diag.nextChecks) ? diag.nextChecks : [];
+  const stepsArr  = Array.isArray(diag.nextChecks)   ? diag.nextChecks   : [];
 
-  const causesText = causesArr.length
-    ? causesArr.map(c => '- ' + (c.cause || '') + (c.evidence ? ' (' + c.evidence + ')' : '')).join('\n')
-    : '- Not enough information to infer likely causes.';
+  const causesHtml = causesArr.length
+    ? '<ul>' + causesArr.map(c => {
+        const ev = c.evidence ? ` <em>(${esc(c.evidence)})</em>` : '';
+        return `<li>${esc(c.cause || '')}${ev}</li>`;
+      }).join('') + '</ul>'
+    : '<ul><li>Not enough information to infer likely causes.</li></ul>';
 
-  const stepsText = stepsArr.length
-    ? stepsArr
+  const stepsHtml = stepsArr.length
+    ? '<ul>' + stepsArr
         .sort((a, b) => (a.priority || 0) - (b.priority || 0))
-        .map(s => ((s.priority != null ? s.priority + '. ' : '- ') + (s.step || '')))
-        .join('\n')
-    : '- No additional checks recommended.';
+        .map(s => `<li>${s.priority != null ? `<b>${s.priority}.</b> ` : ''}${esc(s.step || '')}</li>`)
+        .join('') + '</ul>'
+    : '<ul><li>No additional checks recommended.</li></ul>';
 
-  box.textContent =
-    'Summary: ' + summary + '\n\n' +
-    'Risk level: ' + risk + '\n\n' +
-    'Likely causes:\n' + causesText + '\n\n' +
-    'Next checks:\n' + stepsText;
+  box.innerHTML =
+    `<div class="ai-section-title">Summary</div>` +
+    `<div style="font-size:0.77rem;color:#374151;margin-bottom:4px;">${esc(summary)}</div>` +
+    `<div class="ai-section-title">Risk Level &nbsp;<span class="${riskClass}">${riskLabel}</span></div>` +
+    `<div class="ai-section-title">Likely Causes</div>${causesHtml}` +
+    `<div class="ai-section-title">Next Checks</div>${stepsHtml}`;
 }
 
 
