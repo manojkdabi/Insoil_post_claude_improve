@@ -22718,7 +22718,7 @@ function renderRgbBatchSummary() {
   let html = '<span class="rgb-batch-chip' + (active === null ? ' active' : '') + '" onclick="setRgbBatchFilter(null)" title="Show all">All <span class="chip-count">(' + total + ')</span></span>';
   Object.keys(counts).sort().forEach(function(b) {
     const isActive = active === b;
-    html += '<span class="rgb-batch-chip' + (isActive ? ' active' : '') + '" onclick="setRgbBatchFilter(' + JSON.stringify(b) + ')" title="Filter by ' + b.replace(/"/g, '&quot;') + '">' + b + ' <span class="chip-count">(' + counts[b] + ')</span></span>';
+    html += '<span class="rgb-batch-chip' + (isActive ? ' active' : '') + '" onclick="setRgbBatchFilter(decodeURIComponent(\'' + encodeURIComponent(b) + '\'))" title="Filter by ' + b.replace(/"/g, '&quot;') + '">' + b + ' <span class="chip-count">(' + counts[b] + ')</span></span>';
   });
   container.innerHTML = html;
 }
@@ -22756,7 +22756,7 @@ function renderRgbBatchSidebar() {
   let html = '<div class="rgb-sidebar-batch-item' + (active === null ? ' active' : '') + '" onclick="setRgbBatchFilter(null)">All <span>' + total + '</span></div>';
   Object.keys(counts).sort().forEach(function(b) {
     const isActive = active === b;
-    html += '<div class="rgb-sidebar-batch-item' + (isActive ? ' active' : '') + '" onclick="setRgbBatchFilter(' + JSON.stringify(b) + ')">' + b + ' <span>' + counts[b] + '</span></div>';
+    html += '<div class="rgb-sidebar-batch-item' + (isActive ? ' active' : '') + '" onclick="setRgbBatchFilter(decodeURIComponent(\'' + encodeURIComponent(b) + '\'))">' + b + ' <span>' + counts[b] + '</span></div>';
   });
   list.innerHTML = html;
 }
