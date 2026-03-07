@@ -25433,6 +25433,7 @@ function toggleQCOverrideMode() {
     }
     try { localStorage.setItem('qcManualOverrideEnabled', JSON.stringify(qcManualOverrideEnabled)); } catch(e) {}
 }
+function applyQCOverride() {
     const input  = document.getElementById('qaqc-override-input');
     const toggle = document.getElementById('qaqc-override-toggle');
     const saveBtn = document.getElementById('qaqc-override-save');
