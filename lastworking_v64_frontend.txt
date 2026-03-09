@@ -15544,7 +15544,10 @@ function toggleResultsWhyFail(btn, row) {
   const spectro = (row.Spectro_ID || row.spectro || row.s || '').toLowerCase().trim();
   const allCriteria = (dbCriteria || []).filter(rule => {
     const ruleS = (rule.s || '').toLowerCase().trim();
-    return !ruleS || ruleS === spectro;
+    // Mirror evaluateTestSuccess: apply rule if rule has no spectro restriction,
+    // OR the row has no spectro field, OR they match (case-insensitive).
+    // Rows without a Spectro_ID must see all rules (same as evaluateTestSuccess behaviour).
+    return !ruleS || !spectro || ruleS === spectro;
   });
 
   const rowsHtml = [];
@@ -15560,8 +15563,8 @@ function toggleResultsWhyFail(btn, row) {
     const lLim       = rule.l != null ? rule.l : '-';
     const uLim       = rule.u != null ? rule.u : '-';
     const rel        = escapeHtml(rule.rel || '-');
-    const reason     = escapeHtml(rule.reason || rule.Reason || '-');
-    const action     = escapeHtml(rule.action || rule.Action || '-');
+    const reason     = escapeHtml(rule.re || rule.reason || rule.Reason || '-');
+    const action     = escapeHtml(rule.ac || rule.action || rule.Action || '-');
 
     let fail = false;
     let statusNote = '';
@@ -17672,11 +17675,12 @@ function evaluateTestSuccess(row) {
     // Issue 10 fix: if dbCriteria is empty (e.g. failed/timed-out load), return UNKNOWN not PASS
     if (!dbCriteria || dbCriteria.length === 0) return 'UNKNOWN';
     // Weakness 8 fix: resolve the row's spectro model once; used to skip inapplicable rules
-    const rowSpectro = String(row.Spectro_ID ?? row.spectro ?? row.s ?? '').trim();
+    const rowSpectro = String(row.Spectro_ID ?? row.spectro ?? row.s ?? '').toLowerCase().trim();
     // Weakness 9 fix: use Array.some() for short-circuit evaluation — stops at first FAIL
     const anyFail = dbCriteria.some(rule => {
-        // Weakness 8 fix: if rule.s is non-empty, only apply it to matching spectro model
-        if (rule.s && rowSpectro && rule.s !== rowSpectro) return false;
+        // Weakness 8 fix: if rule.s is non-empty AND row has a spectro, only apply to matching model
+        const ruleS = (rule.s || '').toLowerCase().trim();
+        if (ruleS && rowSpectro && ruleS !== rowSpectro) return false;
         // Bug 2 fix: case-insensitive parameter key match across Criteria and Blanks tables
         const ruleP = (rule.p || '').toLowerCase().trim();
         // Try normalized key first, fall back to raw key to handle mixed-case raw objects
