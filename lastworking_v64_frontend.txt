@@ -8147,6 +8147,7 @@
             <button class="btn btn-slate" onclick="exportResultsCsv()" title="Export current Results to CSV">Export CSV</button>
             <button class="btn btn-indigo" onclick="exportResultsBulkPdf()" id="btn-results-bulk-pdf" title="Export selected rows as PDF reports">Bulk PDF</button>
             <button class="btn btn-outline" onclick="toggleResultsColVisPanel()" title="Toggle column visibility">⊞ Columns</button>
+            <button class="btn btn-outline" onclick="toggleResultsSparklines()" id="btn-results-sparklines" title="Toggle trend sparklines per row (last 10 readings for same device)">📊 Sparklines</button>
             <span id="stv-version-tag" style="font-size:0.8rem; color:#555; margin-left:8px;"></span>
           </div>
           <div id="results-col-vis-panel" style="display:none; flex-wrap:wrap; gap:6px; padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; margin-top:4px; max-width:700px;"></div>
@@ -8195,6 +8196,7 @@
           </label>
         </div>
         <div class="results-table-wrap">
+          <div id="results-filter-chips" style="display:none; flex-wrap:wrap; gap:5px; padding:6px 10px; background:#f8fafc; border-bottom:1px solid #e2e8f0; align-items:center;"></div>
           <div class="results-table-panel active" id="results-table-panel">
             <table id="tbl-results" class="selectable-table">
 
@@ -8203,6 +8205,7 @@
                   <th>#</th>
                   <th class="results-th-sortable" onclick="sortResultsTable('status')" title="Sort by Instrument Status">Instrument Status<span id="results-si-status"></span></th>
                   <th>Report</th>
+                  <th title="Jump to QC Histogram for this row">QC View</th>
                   <th class="results-th-sortable" onclick="sortResultsTable('clientId')" title="Sort by Client ID">Client ID<span id="results-si-clientId"></span></th>
                   <th class="results-th-sortable" onclick="sortResultsTable('farmId')" title="Sort by Farm ID">Farm ID<span id="results-si-farmId"></span></th>
                   <th class="results-th-sortable" onclick="sortResultsTable('crop')" title="Sort by Crop">Crop<span id="results-si-crop"></span></th>
@@ -8224,6 +8227,7 @@
                   <th class="results-th-sortable" onclick="sortResultsTable('fe')" title="Sort by Iron">Iron <br><small>(mg/kg)</small><span id="results-si-fe"></span></th>
                   <th class="results-th-sortable" onclick="sortResultsTable('mn')" title="Sort by Manganese">Manganese <br><small>(mg/kg)</small><span id="results-si-mn"></span></th>
                   <th class="results-th-sortable" onclick="sortResultsTable('b')" title="Sort by Boron">Boron <br><small>(mg/kg)</small><span id="results-si-b"></span></th>
+                  <th id="results-th-sparkline" style="display:none" title="Trend: last 10 pH readings for same device">Trend (pH)</th>
                 </tr>
               </thead>
               <tbody id="body-results"></tbody>
@@ -15559,6 +15563,190 @@ function renderResultsColVisPanel() {
   }).join('');
 }
 
+// ===== Results Enhancement 13: View QC Histogram jump =====
+function viewResultsQcHistogram(evt, deviceId, testId) {
+  if (evt) { evt.stopPropagation(); }
+  // Switch to QAQC module using the nav() function
+  if (typeof nav === 'function') nav('qaqc');
+  // After a brief delay (let DOM settle), switch to QC Status View and set dropdowns
+  setTimeout(function() {
+    if (typeof setQaqcFocus === 'function') setQaqcFocus('status');
+    setTimeout(function() {
+      const devSel = document.getElementById('qaqc-status-device');
+      const testSel = document.getElementById('qaqc-status-test');
+      if (devSel) {
+        for (let i = 0; i < devSel.options.length; i++) {
+          if (devSel.options[i].value === deviceId) { devSel.selectedIndex = i; break; }
+        }
+        if (typeof onQaqcStatusDeviceChange === 'function') onQaqcStatusDeviceChange();
+        setTimeout(function() {
+          if (testSel) {
+            for (let i = 0; i < testSel.options.length; i++) {
+              if (testSel.options[i].value === testId) { testSel.selectedIndex = i; break; }
+            }
+          }
+          if (typeof renderQCStatus === 'function') {
+            const src = window.qcData || (typeof qcData !== 'undefined' ? qcData : []);
+            const row = src.find(function(r) {
+              return String(r.Device_ID ?? r.did ?? '') === deviceId && String(r.Test_ID ?? r.tid ?? '') === testId;
+            });
+            if (row) renderQCStatus(row);
+          }
+        }, 200);
+      }
+    }, 150);
+  }, 200);
+}
+
+// ===== Results Enhancement 14: Batch / Client / Farm chip filter =====
+function renderResultsFilterChips(allData) {
+  const wrap = document.getElementById('results-filter-chips');
+  if (!wrap) return;
+  // Collect unique values
+  const batches = {}, clients = {}, farms = {};
+  (allData || []).forEach(function(d) {
+    const b = String(d.Batch_ID ?? d.batchId ?? d.batch ?? '').trim();
+    const c = String(d.clientId ?? d.Client_ID ?? '').trim();
+    const f = String(d.farmId ?? d.Farm_ID ?? '').trim();
+    if (b) batches[b] = (batches[b] || 0) + 1;
+    if (c) clients[c] = (clients[c] || 0) + 1;
+    if (f) farms[f] = (farms[f] || 0) + 1;
+  });
+  const hasBatch = Object.keys(batches).length > 0;
+  const hasClient = Object.keys(clients).length > 1;
+  const hasFarm = Object.keys(farms).length > 1;
+  if (!hasBatch && !hasClient && !hasFarm) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'flex';
+  const rcf = window.resultsChipFilter;
+  let html = '<span style="font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap;">Filter:</span>';
+  // All chip
+  html += '<span class="rgb-batch-chip' + (!rcf ? ' active' : '') + '" onclick="setResultsChipFilter(null,null)" title="Show all">All</span>';
+  // Batch chips
+  if (hasBatch) {
+    Object.keys(batches).forEach(function(b) {
+      const isA = rcf && rcf.type === 'batch' && rcf.value === b;
+      html += '<span class="rgb-batch-chip' + (isA ? ' active' : '') + '" onclick="setResultsChipFilter(\'batch\',decodeURIComponent(\'' + encodeURIComponent(b) + '\'))" title="Batch: ' + b.replace(/"/g, '&quot;') + '">📦 ' + escapeHtml(b) + ' <span class="chip-count">(' + batches[b] + ')</span></span>';
+    });
+  }
+  // Client chips (only if multiple)
+  if (hasClient) {
+    Object.keys(clients).forEach(function(c) {
+      const isA = rcf && rcf.type === 'client' && rcf.value === c;
+      html += '<span class="rgb-batch-chip' + (isA ? ' active' : '') + '" onclick="setResultsChipFilter(\'client\',decodeURIComponent(\'' + encodeURIComponent(c) + '\'))" title="Client: ' + c.replace(/"/g, '&quot;') + '">👤 ' + escapeHtml(c) + ' <span class="chip-count">(' + clients[c] + ')</span></span>';
+    });
+  }
+  // Farm chips (only if multiple)
+  if (hasFarm) {
+    Object.keys(farms).forEach(function(f) {
+      const isA = rcf && rcf.type === 'farm' && rcf.value === f;
+      html += '<span class="rgb-batch-chip' + (isA ? ' active' : '') + '" onclick="setResultsChipFilter(\'farm\',decodeURIComponent(\'' + encodeURIComponent(f) + '\'))" title="Farm: ' + f.replace(/"/g, '&quot;') + '">🏡 ' + escapeHtml(f) + ' <span class="chip-count">(' + farms[f] + ')</span></span>';
+    });
+  }
+  wrap.innerHTML = html;
+}
+
+function setResultsChipFilter(type, value) {
+  window.resultsChipFilter = (type && value) ? { type: type, value: value } : null;
+  if (window.pageState) window.pageState['results'] = 1;
+  if (typeof renderResults === 'function') renderResults();
+}
+
+// ===== Results Enhancement 16: Trend sparklines =====
+function toggleResultsSparklines() {
+  window.resultsSparklines = !window.resultsSparklines;
+  const btn = document.getElementById('btn-results-sparklines');
+  if (btn) btn.style.fontWeight = window.resultsSparklines ? '700' : '';
+  if (typeof renderResults === 'function') renderResults();
+}
+
+function renderResultsSparkline(deviceId, allData, toNumFn) {
+  // Shows a polyline of the last 10 pH readings for the same device
+  const _toNum = toNumFn || function(v) { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const W = 64, H = 18;
+  // Collect pH readings for same device, sorted by time
+  const deviceRows = (allData || []).filter(function(d) {
+    return String(d.did ?? d.Device_ID ?? '') === String(deviceId);
+  });
+  // Sort by date ascending
+  deviceRows.sort(function(a, b) {
+    const ta = new Date(a.time ?? a.Test_date ?? 0).getTime();
+    const tb = new Date(b.time ?? b.Test_date ?? 0).getTime();
+    return ta - tb;
+  });
+  const last10 = deviceRows.slice(-10);
+  const pHVals = last10.map(function(d) {
+    const r = d.raw || {};
+    return _toNum(typeof calcMetric === 'function' ? calcMetric(r, 'ph') : null);
+  }).filter(function(v) { return v !== null && v > 0; });
+
+  if (pHVals.length < 2) {
+    // Not enough data
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    const txt = document.createElementNS(ns, 'text');
+    txt.setAttribute('x', W / 2); txt.setAttribute('y', H / 2 + 4);
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('font-size', '9');
+    txt.setAttribute('fill', '#9ca3af');
+    txt.textContent = 'n/a';
+    svg.appendChild(txt);
+    return svg;
+  }
+
+  const mn = Math.min.apply(null, pHVals);
+  const mx = Math.max.apply(null, pHVals);
+  const range = mx - mn || 1;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('title', 'pH trend for ' + deviceId + ' (last ' + pHVals.length + ' tests): ' + pHVals.map(function(v) { return v.toFixed(1); }).join(', '));
+
+  // PASS zone band (pH 5.5-8.5)
+  const yPass1 = H - Math.max(0, Math.min(H, Math.round(((8.5 - mn) / range) * H)));
+  const yPass2 = H - Math.max(0, Math.min(H, Math.round(((5.5 - mn) / range) * H)));
+  if (yPass2 > yPass1) {
+    const band = document.createElementNS(ns, 'rect');
+    band.setAttribute('x', 0); band.setAttribute('y', yPass1);
+    band.setAttribute('width', W); band.setAttribute('height', Math.max(0, yPass2 - yPass1));
+    band.setAttribute('fill', 'rgba(52,211,153,0.12)');
+    svg.appendChild(band);
+  }
+
+  // Build polyline points
+  const pts = pHVals.map(function(v, i) {
+    const x = Math.round((i / (pHVals.length - 1)) * (W - 4)) + 2;
+    const y = H - 2 - Math.round(((v - mn) / range) * (H - 4));
+    return x + ',' + y;
+  }).join(' ');
+
+  const poly = document.createElementNS(ns, 'polyline');
+  poly.setAttribute('points', pts);
+  // Color: last value determines line color (PASS zone = green, else red)
+  const lastPh = pHVals[pHVals.length - 1];
+  const lineColor = (lastPh >= 5.5 && lastPh <= 8.5) ? '#10b981' : '#f87171';
+  poly.setAttribute('stroke', lineColor);
+  poly.setAttribute('stroke-width', '1.5');
+  poly.setAttribute('fill', 'none');
+  poly.setAttribute('stroke-linejoin', 'round');
+  poly.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(poly);
+
+  // Current value dot
+  const lastX = Math.round(((pHVals.length - 1) / (pHVals.length - 1)) * (W - 4)) + 2;
+  const lastY = H - 2 - Math.round(((lastPh - mn) / range) * (H - 4));
+  const dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('cx', lastX); dot.setAttribute('cy', lastY);
+  dot.setAttribute('r', 2.5);
+  dot.setAttribute('fill', lineColor);
+  svg.appendChild(dot);
+
+  return svg;
+}
+
 // ===== Results W14: Bulk PDF export =====
 async function exportResultsBulkPdf() {
   const ids = (multiSelect && multiSelect.results) ? multiSelect.results : [];
@@ -20281,6 +20469,20 @@ function renderResults() {
     });
   }
 
+  // Enhancement 14: batch / client / farm chip filter
+  const rcf = window.resultsChipFilter;
+  if (rcf && rcf.value) {
+    filtered = filtered.filter(d => {
+      if (rcf.type === 'batch')  return String(d.Batch_ID ?? d.batchId ?? d.batch ?? '').toLowerCase() === rcf.value.toLowerCase();
+      if (rcf.type === 'client') return String(d.clientId ?? d.Client_ID ?? '').toLowerCase() === rcf.value.toLowerCase();
+      if (rcf.type === 'farm')   return String(d.farmId ?? d.Farm_ID ?? '').toLowerCase() === rcf.value.toLowerCase();
+      return true;
+    });
+  }
+
+  // Enhancement 14: render chip filter UI after filtering is applied to original rgbData
+  if (typeof renderResultsFilterChips === 'function') renderResultsFilterChips(window.rgbData || rgbData || []);
+
   // Sort
   const ss = window.resultsSortState;
   if (ss && ss.col) {
@@ -20347,6 +20549,10 @@ function renderResults() {
     if (ss && ss.col === c) { el.textContent = ss.asc ? ' ▲' : ' ▼'; }
     else { el.textContent = ''; }
   });
+
+  // Enhancement 16: show/hide sparkline column header
+  const sparklineThEl = document.getElementById('results-th-sparkline');
+  if (sparklineThEl) sparklineThEl.style.display = window.resultsSparklines ? '' : 'none';
 
   // 3. Slice Data
   const pageData = filtered.slice(startIdx, endIdx);
@@ -20485,11 +20691,21 @@ function renderResults() {
 
     tr.innerHTML = `<td>${globalIdx}</td><td class="${tClass}">${testStatus}</td>
       <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${eTid}', '${eDid}', '${eCrop}', '${eTime}')">Download report</button></td>
+      <td><button class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 6px; white-space:nowrap;" onclick="viewResultsQcHistogram(event,'${eDid}','${eTid}')" title="Jump to QC Histogram for Device ${eDid} / Test ${eTid}">📊 QC →</button></td>
       <td${cv('clientId')}>${escapeHtml(d.clientId ?? d.Client_ID ?? '') || '-'}</td><td${cv('farmId')}>${escapeHtml(d.farmId ?? d.Farm_ID ?? '') || '-'}</td><td${cv('crop')}>${eCrop || '-'}</td><td>${eTid}</td><td>${eDid}</td><td class="col-date">${eTime}</td>
       <td${cv('Place')}>${escapeHtml(d.Place ?? d.place ?? '') || '-'}</td><td${cv('GPS')}>${escapeHtml(d.GPS ?? d.gps ?? '') || '-'}</td><td${cv('State')}>${escapeHtml(d.State ?? d.state ?? '') || '-'}</td>
       <td class="${paramSt('ph',phN)}"${phTip ? ` title="${phTip}"` : ''}>${ph}</td><td class="${paramSt('ec',ecN)}"${ecTip ? ` title="${ecTip}"` : ''}>${ec}</td><td class="${paramSt('oc',ocN)}"${ocTip ? ` title="${ocTip}"` : ''}>${oc}</td><td class="${paramSt('n',nN)}"${nTip ? ` title="${nTip}"` : ''}>${n}</td>
       <td class="${paramSt('p',pN)}"${pTip ? ` title="${pTip}"` : ''}>${p}</td><td class="${paramSt('k',kN)}"${kTip ? ` title="${kTip}"` : ''}>${k}</td><td class="${paramSt('s',sN)}">${s}</td><td class="${paramSt('zn',znN)}">${zn}</td>
       <td class="${paramSt('cu',cuN)}">${cu}</td><td class="${paramSt('fe',feN)}">${fe}</td><td class="${paramSt('mn',mnN)}">${mn}</td><td class="${paramSt('b',bN)}">${b}</td>`;
+
+    // Enhancement 16: append sparkline cell
+    if (window.resultsSparklines) {
+      const tdSpark = document.createElement('td');
+      tdSpark.style.cssText = 'padding:2px 4px; vertical-align:middle;';
+      const sparkSvg = (typeof renderResultsSparkline === 'function') ? renderResultsSparkline(d.did ?? d.Device_ID ?? '', rgbData || [], toNum) : null;
+      if (sparkSvg) tdSpark.appendChild(sparkSvg);
+      tr.appendChild(tdSpark);
+    }
 
     tbody.appendChild(tr);
   });
