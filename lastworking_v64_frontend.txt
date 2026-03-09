@@ -15572,15 +15572,16 @@ function toggleResultsWhyFail(btn, row) {
 
     let fail = false;
     let statusNote = '';
-    if (finalVal != null) {
+    // Use direct Abs/Val (not blank-corrected) for criteria matching
+    if (val != null) {
       if (rule.rel === 'between') {
-        if (finalVal >= rule.l && finalVal <= rule.u) {
+        if (val >= rule.l && val <= rule.u) {
           fail = true;
           statusNote = `Inside FAIL zone [${rule.l} - ${rule.u}]`;
         }
-      } else if (rule.rel === '<' && finalVal < rule.u)  { fail = true; statusNote = `${finalVal.toFixed(4)} < ${rule.u}`; }
-      else if (rule.rel === '>' && finalVal > rule.l)    { fail = true; statusNote = `${finalVal.toFixed(4)} > ${rule.l}`; }
-      else if (rule.rel === '=' && finalVal == rule.l)   { fail = true; statusNote = `${finalVal.toFixed(4)} = ${rule.l}`; }
+      } else if (rule.rel === '<' && val < rule.u)  { fail = true; statusNote = `${val.toFixed(4)} < ${rule.u}`; }
+      else if (rule.rel === '>' && val > rule.l)    { fail = true; statusNote = `${val.toFixed(4)} > ${rule.l}`; }
+      else if (rule.rel === '=' && val == rule.l)   { fail = true; statusNote = `${val.toFixed(4)} = ${rule.l}`; }
     }
     return { rule, ruleP, paramName, metric, val, blank, finalVal, lLim, uLim, rel, reason, action, fail, statusNote };
   });
@@ -17720,19 +17721,16 @@ function evaluateTestSuccess(row) {
         const rawObj = row.raw[ruleP] || row.raw[rule.p];
         if (!rawObj) return false;
         let val = parseFloat(calcMetric(row.raw, rule.p));
-        // Bug 2 fix: case-insensitive lookup; Bug 1 fix: blankData.val is already parseFloat'd
-        const blankEntry = blankData.find(b => (b.p || '').toLowerCase().trim() === ruleP);
-        const blank = blankEntry ? (blankEntry.val || 0) : 0;
-        const finalVal = val - blank;
+        // Use direct Abs/Val (not blank-corrected) for criteria matching
         if (rule.rel === 'between') {
             // Each criteria row defines a FAIL zone: value falls INSIDE [l, u] → FAIL
-            return (finalVal >= rule.l && finalVal <= rule.u);
+            return (val >= rule.l && val <= rule.u);
         } else if (rule.rel === '<') {
-            return (finalVal < rule.u);
+            return (val < rule.u);
         } else if (rule.rel === '>') {
-            return (finalVal > rule.l);
+            return (val > rule.l);
         } else if (rule.rel === '=') {
-            return (finalVal == rule.l);
+            return (val == rule.l);
         }
         return false;
     });
@@ -21429,14 +21427,15 @@ function renderResultsDetails(row) {
 
         let fail = false;
         if(rawObj) {
+            // Use direct Abs/Val (not blank-corrected) for criteria matching
             if (rule.rel === 'between') {
-                if (finalVal >= rule.l && finalVal <= rule.u) fail = true;
+                if (val >= rule.l && val <= rule.u) fail = true;
             } else if (rule.rel === '<') {
-                if (finalVal < rule.u) fail = true;
+                if (val < rule.u) fail = true;
             } else if (rule.rel === '>') {
-                if (finalVal > rule.l) fail = true;
+                if (val > rule.l) fail = true;
             } else if (rule.rel === '=') {
-                if (finalVal == rule.l) fail = true;
+                if (val == rule.l) fail = true;
             }
         }
 
@@ -23372,14 +23371,15 @@ function renderDeviceResultsDetails(row) {
 
     let fail = false;
     if (rawObj) {
+      // Use direct Abs/Val (not blank-corrected) for criteria matching
       if (rule.rel === 'between') {
-        if (finalVal >= rule.l && finalVal <= rule.u) fail = true;
+        if (val >= rule.l && val <= rule.u) fail = true;
       } else if (rule.rel === '<') {
-        if (finalVal < rule.u) fail = true;
+        if (val < rule.u) fail = true;
       } else if (rule.rel === '>') {
-        if (finalVal > rule.l) fail = true;
+        if (val > rule.l) fail = true;
       } else if (rule.rel === '=') {
-        if (finalVal == rule.l) fail = true;
+        if (val == rule.l) fail = true;
       }
     }
 
@@ -38166,6 +38166,7 @@ function _dbSortDefaultFirst_(arr) {
       <div id="why-fail-modal-meta"></div>
       <div id="why-fail-modal-subtitle">
         ℹ️ All limit values below are in <b>Abs/Val space</b> — raw absorbance readings, NOT STV-converted concentrations.
+        FAIL/PASS decisions are made against <b>direct Abs/Val</b> (not blank-corrected). Blank and Blank-Corrected columns shown for reference only.
         Parameters are <b>grouped</b>: 🔴 FAIL groups appear first. Each group header shows the overall verdict; indented rows (↳) show individual conditions.
       </div>
       <div id="why-fail-modal-table-wrap">
