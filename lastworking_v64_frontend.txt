@@ -2883,6 +2883,10 @@
     #why-fail-modal-table td { padding: 5px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
     #why-fail-modal-table tr.why-fail-pass td { background: #f0fdf4; color: #166534; }
     #why-fail-modal-table tr.why-fail-fail td { background: #fff1f2; color: #9f1239; }
+    #why-fail-modal-table tr.why-fail-group-fail td { background: #fde8e8; color: #7f1d1d; font-weight: 700; border-top: 2px solid #fca5a5; font-size: 12.5px; }
+    #why-fail-modal-table tr.why-fail-group-pass td { background: #dcfce7; color: #14532d; font-weight: 700; border-top: 2px solid #86efac; font-size: 12.5px; }
+    #why-fail-modal-table tr.why-fail-cond-fail td { background: #fff7f7; color: #9f1239; }
+    #why-fail-modal-table tr.why-fail-cond-pass td { background: #fafafa; color: #374151; }
     #why-fail-modal-table .why-fail-badge-pass { display:inline-block; padding:1px 8px; border-radius:9px; background:#dcfce7; color:#166534; font-weight:600; font-size:11px; }
     #why-fail-modal-table .why-fail-badge-fail { display:inline-block; padding:1px 8px; border-radius:9px; background:#fee2e2; color:#991b1b; font-weight:600; font-size:11px; }
     #why-fail-modal-empty { font-size:13px; color:#64748b; padding:10px 0; text-align:center; }
@@ -15550,8 +15554,8 @@ function toggleResultsWhyFail(btn, row) {
     return !ruleS || !spectro || ruleS === spectro;
   });
 
-  const rowsHtml = [];
-  allCriteria.forEach(rule => {
+  // Evaluate every criterion once, compute fail/statusNote per condition
+  const evaluated = allCriteria.map(rule => {
     const ruleP      = (rule.p || '').toLowerCase().trim();
     const rawObj     = row.raw[ruleP] || row.raw[rule.p] || null;
     const val        = rawObj != null ? (parseFloat(calcMetric(row.raw, rule.p)) || 0) : null;
@@ -15578,28 +15582,57 @@ function toggleResultsWhyFail(btn, row) {
       else if (rule.rel === '>' && finalVal > rule.l)    { fail = true; statusNote = `${finalVal.toFixed(4)} > ${rule.l}`; }
       else if (rule.rel === '=' && finalVal == rule.l)   { fail = true; statusNote = `${finalVal.toFixed(4)} = ${rule.l}`; }
     }
+    return { rule, ruleP, paramName, metric, val, blank, finalVal, lLim, uLim, rel, reason, action, fail, statusNote };
+  });
 
-    const rowClass   = fail ? 'why-fail-fail' : 'why-fail-pass';
-    const badgeHtml  = fail
-      ? `<span class="why-fail-badge-fail">FAIL</span> <small>${escapeHtml(statusNote)}</small>`
-      : `<span class="why-fail-badge-pass">PASS</span>`;
-    const valCell    = val      != null ? val.toFixed(4)      : '<em>no data</em>';
-    const corrCell   = finalVal != null ? finalVal.toFixed(4) : '<em>no data</em>';
-    const blankCell  = blank != null ? Number(blank).toFixed(4) : '0';
+  // Group by parameter key; preserve original order of first occurrence
+  const groupMap = new Map();
+  evaluated.forEach(ev => {
+    if (!groupMap.has(ev.ruleP)) groupMap.set(ev.ruleP, { paramName: ev.paramName, items: [], anyFail: false });
+    const g = groupMap.get(ev.ruleP);
+    g.items.push(ev);
+    if (ev.fail) g.anyFail = true;
+  });
 
-    rowsHtml.push(`<tr class="${rowClass}">
-      <td><b>${paramName}</b></td>
-      <td>${metric}</td>
-      <td>${valCell}</td>
-      <td>${blankCell}</td>
-      <td>${corrCell}</td>
-      <td>${lLim}</td>
-      <td>${rel}</td>
-      <td>${uLim}</td>
-      <td>${reason}</td>
-      <td>${action}</td>
-      <td>${badgeHtml}</td>
-    </tr>`);
+  // Sort: FAIL groups first, then PASS groups; within each group FAIL conditions first
+  const sortedGroups = [...groupMap.values()].sort((a, b) => (b.anyFail ? 1 : 0) - (a.anyFail ? 1 : 0));
+
+  const rowsHtml = [];
+  sortedGroups.forEach(group => {
+    const failCount  = group.items.filter(i => i.fail).length;
+    const total      = group.items.length;
+    const groupClass = group.anyFail ? 'why-fail-group-fail' : 'why-fail-group-pass';
+    const badge      = group.anyFail
+      ? `<span class="why-fail-badge-fail">FAIL</span> &nbsp;<small>${failCount} of ${total} condition${total > 1 ? 's' : ''} triggered</small>`
+      : `<span class="why-fail-badge-pass">PASS</span> &nbsp;<small>all ${total} condition${total > 1 ? 's' : ''} cleared</small>`;
+
+    rowsHtml.push(`<tr class="${groupClass}"><td colspan="11">📊 <b>${group.paramName}</b> &nbsp; ${badge}</td></tr>`);
+
+    // Sort conditions: FAIL first within each group
+    const sortedItems = [...group.items].sort((a, b) => (b.fail ? 1 : 0) - (a.fail ? 1 : 0));
+    sortedItems.forEach(ev => {
+      const rowClass  = ev.fail ? 'why-fail-cond-fail' : 'why-fail-cond-pass';
+      const badgeHtml = ev.fail
+        ? `<span class="why-fail-badge-fail">FAIL</span> <small>${escapeHtml(ev.statusNote)}</small>`
+        : `<span class="why-fail-badge-pass">PASS</span>`;
+      const valCell   = ev.val      != null ? ev.val.toFixed(4)      : '<em>no data</em>';
+      const corrCell  = ev.finalVal != null ? ev.finalVal.toFixed(4) : '<em>no data</em>';
+      const blankCell = ev.blank    != null ? Number(ev.blank).toFixed(4) : '0';
+
+      rowsHtml.push(`<tr class="${rowClass}">
+        <td style="padding-left:20px;color:#94a3b8;">↳</td>
+        <td>${escapeHtml(ev.metric)}</td>
+        <td>${valCell}</td>
+        <td>${blankCell}</td>
+        <td>${corrCell}</td>
+        <td>${escapeHtml(String(ev.lLim))}</td>
+        <td>${escapeHtml(ev.rel)}</td>
+        <td>${escapeHtml(String(ev.uLim))}</td>
+        <td>${escapeHtml(ev.reason)}</td>
+        <td>${escapeHtml(ev.action)}</td>
+        <td>${badgeHtml}</td>
+      </tr>`);
+    });
   });
 
   const tbody = document.getElementById('why-fail-modal-tbody');
@@ -38132,14 +38165,14 @@ function _dbSortDefaultFirst_(arr) {
       </div>
       <div id="why-fail-modal-meta"></div>
       <div id="why-fail-modal-subtitle">
-        ℹ️ All limit values below are in <b>Abs/Val space</b> — they are raw absorbance readings, NOT STV-converted concentrations.
-        Rows highlighted red triggered the FAIL. Rows in green passed all criteria.
+        ℹ️ All limit values below are in <b>Abs/Val space</b> — raw absorbance readings, NOT STV-converted concentrations.
+        Parameters are <b>grouped</b>: 🔴 FAIL groups appear first. Each group header shows the overall verdict; indented rows (↳) show individual conditions.
       </div>
       <div id="why-fail-modal-table-wrap">
         <table id="why-fail-modal-table">
           <thead>
             <tr>
-              <th>Parameter</th>
+              <th>Param / Condition</th>
               <th>Metric</th>
               <th>Abs/Val</th>
               <th>Blank</th>
