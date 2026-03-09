@@ -1463,6 +1463,11 @@
       font-weight: 700;
     }
 
+    .val-yellow {
+      color: #b45309;
+      font-weight: 700;
+    }
+
     .text-blue {
       color: var(--accent);
       font-weight: 600;
@@ -2622,12 +2627,12 @@
     }
 
     /* R3 — sortable RGB/QAQC column headers */
-    .rgb-th-sortable {
+    .rgb-th-sortable, .results-th-sortable {
       cursor: pointer;
       user-select: none;
       white-space: nowrap;
     }
-    .rgb-th-sortable:hover {
+    .rgb-th-sortable:hover, .results-th-sortable:hover {
       background: rgba(99,102,241,0.08);
     }
 
@@ -8139,8 +8144,12 @@
         <div class="toolbar">
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
             <button class="btn" onclick="renderResults()">Refresh Results</button>
+            <button class="btn btn-slate" onclick="exportResultsCsv()" title="Export current Results to CSV">Export CSV</button>
+            <button class="btn btn-indigo" onclick="exportResultsBulkPdf()" id="btn-results-bulk-pdf" title="Export selected rows as PDF reports">Bulk PDF</button>
+            <button class="btn btn-outline" onclick="toggleResultsColVisPanel()" title="Toggle column visibility">⊞ Columns</button>
             <span id="stv-version-tag" style="font-size:0.8rem; color:#555; margin-left:8px;"></span>
           </div>
+          <div id="results-col-vis-panel" style="display:none; flex-wrap:wrap; gap:6px; padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; margin-top:4px; max-width:700px;"></div>
 
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
             <div
@@ -8149,6 +8158,12 @@
               <span id="pg-results-txt" style="font-size:0.8rem; font-weight:bold; min-width:90px; text-align:center;">Loading...</span>
               <button class="btn btn-outline" style="padding:4px 8px;" onclick="changePage('results', 1)">❯</button>
             </div>
+            <select id="results-per-page" style="padding:3px 6px; border:1px solid #d1d5db; border-radius:6px; font-size:0.8rem;" title="Rows per page" onchange="setResultsRowsPerPage(this.value)">
+              <option value="25">25/pg</option>
+              <option value="50" selected>50/pg</option>
+              <option value="100">100/pg</option>
+              <option value="200">200/pg</option>
+            </select>
 
             <input type="date" id="date-results-from" class="date-input" onchange="resetPageAndRender('results')">
             <span style="font-size:0.8em;">to</span>
@@ -8156,6 +8171,16 @@
 
             <input type="text" id="search-results-dev" class="search-input" placeholder="Device ID" onkeyup="resetPageAndRender('results')">
             <input type="text" id="search-results-test" class="search-input" placeholder="Test ID" onkeyup="resetPageAndRender('results')">
+            <input type="text" id="search-results-global" class="search-input" placeholder="🔍 Search all columns..." onkeyup="resetPageAndRender('results')" style="width:180px;">
+          </div>
+
+          <div class="toolbar-row" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span style="font-size:11px; color:#6b7280; font-weight:500;">Range:</span>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setResultsDatePreset('today')">Today</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setResultsDatePreset('7d')">Last 7d</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setResultsDatePreset('30d')">Last 30d</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setResultsDatePreset('month')">This Month</button>
+            <button class="btn btn-outline" style="font-size:11px; padding:3px 8px;" onclick="setResultsDatePreset('all')">All</button>
           </div>
         </div>
       </div>
@@ -8176,29 +8201,29 @@
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Test Status</th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('status')" title="Sort by Instrument Status">Instrument Status<span id="results-si-status"></span></th>
                   <th>Report</th>
-                  <th>Client ID</th>
-                  <th>Farm ID</th>
-                  <th>Crop</th>
-                  <th>Test ID</th>
-                  <th>Device ID</th>
-                  <th class="col-date">Test Date-Time</th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('clientId')" title="Sort by Client ID">Client ID<span id="results-si-clientId"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('farmId')" title="Sort by Farm ID">Farm ID<span id="results-si-farmId"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('crop')" title="Sort by Crop">Crop<span id="results-si-crop"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('tid')" title="Sort by Test ID">Test ID<span id="results-si-tid"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('did')" title="Sort by Device ID">Device ID<span id="results-si-did"></span></th>
+                  <th class="col-date results-th-sortable" onclick="sortResultsTable('time')" title="Sort by Date">Test Date-Time<span id="results-si-time"></span></th>
                   <th>Place</th>
                   <th>GPS</th>
                   <th>State</th>
-                  <th>pH <br><small>(-)</small></th>
-                  <th>EC <br><small>(dS/m)</small></th>
-                  <th>Org Carbon <br><small>(%)</small></th>
-                  <th>Nitrogen <br><small>(kg/ha)</small></th>
-                  <th>Phosphorus <br><small>(kg/ha)</small></th>
-                  <th>Potassium <br><small>(kg/ha)</small></th>
-                  <th>Sulphur <br><small>(mg/kg)</small></th>
-                  <th>Zinc <br><small>(mg/kg)</small></th>
-                  <th>Copper <br><small>(mg/kg)</small></th>
-                  <th>Iron <br><small>(mg/kg)</small></th>
-                  <th>Manganese <br><small>(mg/kg)</small></th>
-                  <th>Boron <br><small>(mg/kg)</small></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('ph')" title="Sort by pH">pH <br><small>(-)</small><span id="results-si-ph"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('ec')" title="Sort by EC">EC <br><small>(dS/m)</small><span id="results-si-ec"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('oc')" title="Sort by Org Carbon">Org Carbon <br><small>(%)</small><span id="results-si-oc"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('n')" title="Sort by Nitrogen">Nitrogen <br><small>(kg/ha)</small><span id="results-si-n"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('p')" title="Sort by Phosphorus">Phosphorus <br><small>(kg/ha)</small><span id="results-si-p"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('k')" title="Sort by Potassium">Potassium <br><small>(kg/ha)</small><span id="results-si-k"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('s')" title="Sort by Sulphur">Sulphur <br><small>(mg/kg)</small><span id="results-si-s"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('zn')" title="Sort by Zinc">Zinc <br><small>(mg/kg)</small><span id="results-si-zn"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('cu')" title="Sort by Copper">Copper <br><small>(mg/kg)</small><span id="results-si-cu"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('fe')" title="Sort by Iron">Iron <br><small>(mg/kg)</small><span id="results-si-fe"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('mn')" title="Sort by Manganese">Manganese <br><small>(mg/kg)</small><span id="results-si-mn"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('b')" title="Sort by Boron">Boron <br><small>(mg/kg)</small><span id="results-si-b"></span></th>
                 </tr>
               </thead>
               <tbody id="body-results"></tbody>
@@ -15408,6 +15433,172 @@ function exportRgbCsv() {
   showToast('CSV exported ✅', 'success');
 }
 
+// ===== Results W8: Rows per page =====
+function setResultsRowsPerPage(n) {
+  window.resultsRowsPerPage = parseInt(n, 10) || 50;
+  if (window.pageState) window.pageState['results'] = 1;
+  if (typeof renderResults === 'function') renderResults();
+}
+
+// ===== Results W9: Date presets =====
+function setResultsDatePreset(preset) {
+  const fromEl = document.getElementById('date-results-from');
+  const toEl = document.getElementById('date-results-to');
+  if (!fromEl || !toEl) return;
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0, 10);
+  if (preset === 'today') {
+    fromEl.value = fmt(today);
+    toEl.value = fmt(today);
+  } else if (preset === '7d') {
+    const d = new Date(today); d.setDate(d.getDate() - 6);
+    fromEl.value = fmt(d);
+    toEl.value = fmt(today);
+  } else if (preset === '30d') {
+    const d = new Date(today); d.setDate(d.getDate() - 29);
+    fromEl.value = fmt(d);
+    toEl.value = fmt(today);
+  } else if (preset === 'month') {
+    fromEl.value = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+    toEl.value = fmt(today);
+  } else if (preset === 'all') {
+    fromEl.value = '';
+    toEl.value = '';
+  }
+  if (window.pageState) window.pageState['results'] = 1;
+  if (typeof renderResults === 'function') renderResults();
+}
+
+// ===== Results W10: CSV export =====
+function exportResultsCsv() {
+  const data = window.currentFilteredResults || window.rgbData || rgbData || [];
+  if (!data.length) { showToast('No Results data to export.', 'warning'); return; }
+  const normStr = v => String(v ?? '');
+  const toNum = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const addStrict = (a, b) => { const na = toNum(a), nb = toNum(b); if (na == null && nb == null) return null; return (na ?? 0) + (nb ?? 0); };
+  const subStrict = (a, b) => { const na = toNum(a), nb = toNum(b); if (na == null || nb == null) return null; return na - nb; };
+  const esc = v => { const s = String(v ?? ''); if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"'; return s; };
+  const header = ['Instrument Status','Test ID','Device ID','Date','Client ID','Farm ID','Crop','Place','GPS','State',
+    'pH (-)','EC (dS/m)','Org Carbon (%)','Nitrogen (kg/ha)','Phosphorus (kg/ha)','Potassium (kg/ha)',
+    'Sulphur (mg/kg)','Zinc (mg/kg)','Copper (mg/kg)','Iron (mg/kg)','Manganese (mg/kg)','Boron (mg/kg)'].map(esc).join(',');
+  const rows = data.map(d => {
+    if (typeof ensureRowRaw === 'function') ensureRowRaw(d);
+    const status = (typeof evaluateTestSuccess === 'function') ? evaluateTestSuccess(d) : '';
+    const r = d.raw || {};
+    const phN = toNum(calcMetric(r, 'ph')); const ecN = toNum(calcMetric(r, 'ec'));
+    const ocN = toNum(getSTV(r, 'oc'));
+    const nN = toNum(addStrict(getSTV(r, 'ammonium'), getSTV(r, 'nitrate')));
+    const pN = toNum(getSTV(r, 'phosphorus')); const kN = toNum(getSTV(r, 'potassium'));
+    const sN = toNum(getSTV(r, 'sulphur'));
+    const znN = toNum(subStrict(getSTV(r, 'zinccopper'), getSTV(r, 'copper')));
+    const cuN = toNum(getSTV(r, 'copper')); const feN = toNum(getSTV(r, 'iron'));
+    const mnN = toNum(getSTV(r, 'manganese')); const bN = toNum(getSTV(r, 'boron'));
+    const fmt = n => (n != null ? n.toFixed(2) : '');
+    const base = [status, normStr(d.tid ?? ''), normStr(d.did ?? ''), normStr(d.time ?? d.Test_date ?? ''),
+      normStr(d.clientId ?? d.Client_ID ?? ''), normStr(d.farmId ?? d.Farm_ID ?? ''),
+      normStr(d.crop ?? ''), normStr(d.Place ?? d.place ?? ''),
+      normStr(d.GPS ?? d.gps ?? ''), normStr(d.State ?? d.state ?? '')].map(esc);
+    const metrics = [phN, ecN, ocN, nN, pN, kN, sN, znN, cuN, feN, mnN, bN].map(n => esc(fmt(n)));
+    return [...base, ...metrics].join(',');
+  });
+  const csv = [header, ...rows].join('\n');
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'results-data-' + dateStr + '.csv';
+  a.click();
+  showToast('Results CSV exported ✅', 'success');
+}
+
+// ===== Results W11: Column sorting =====
+function sortResultsTable(col) {
+  window.resultsSortState = window.resultsSortState || { col: null, asc: true };
+  const ss = window.resultsSortState;
+  if (ss.col === col) { ss.asc = !ss.asc; }
+  else { ss.col = col; ss.asc = true; }
+  if (typeof renderResults === 'function') renderResults();
+}
+
+// ===== Results W13: Column visibility =====
+window.resultsHiddenCols = window.resultsHiddenCols instanceof Set ? window.resultsHiddenCols : new Set();
+
+function toggleResultsColVisPanel() {
+  const panel = document.getElementById('results-col-vis-panel');
+  if (!panel) return;
+  const isVisible = panel.style.display !== 'none' && panel.style.display !== '';
+  panel.style.display = isVisible ? 'none' : 'flex';
+  if (!isVisible) renderResultsColVisPanel();
+}
+
+function toggleResultsColVis(key) {
+  window.resultsHiddenCols = window.resultsHiddenCols instanceof Set ? window.resultsHiddenCols : new Set();
+  if (window.resultsHiddenCols.has(key)) {
+    window.resultsHiddenCols.delete(key);
+  } else {
+    window.resultsHiddenCols.add(key);
+  }
+  if (typeof renderResults === 'function') renderResults();
+}
+
+function renderResultsColVisPanel() {
+  const panel = document.getElementById('results-col-vis-panel');
+  if (!panel) return;
+  window.resultsHiddenCols = window.resultsHiddenCols instanceof Set ? window.resultsHiddenCols : new Set();
+  const allCols = [
+    { k: 'clientId', label: 'Client ID' },
+    { k: 'farmId', label: 'Farm ID' },
+    { k: 'crop', label: 'Crop' },
+    { k: 'Place', label: 'Place' },
+    { k: 'GPS', label: 'GPS' },
+    { k: 'State', label: 'State' }
+  ];
+  panel.innerHTML = allCols.map(function(col) {
+    const checked = !window.resultsHiddenCols.has(col.k);
+    return '<label style="font-size:12px;font-weight:500;color:#166534;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleResultsColVis(\'' + col.k.replace(/'/g, "\\'") + '\')" style="cursor:pointer;">' + col.label + '</label>';
+  }).join('');
+}
+
+// ===== Results W14: Bulk PDF export =====
+async function exportResultsBulkPdf() {
+  const ids = (multiSelect && multiSelect.results) ? multiSelect.results : [];
+  if (!ids.length) { showToast('Select at least one row to export bulk PDF.', 'warning'); return; }
+  if (!ensureResultsReportLibs()) return;
+  if (typeof JSZip === 'undefined' && !(window.JSZip)) {
+    showToast('Bulk PDF requires JSZip to be loaded.', 'warning'); return;
+  }
+  const data = window.currentFilteredResults || window.rgbData || rgbData || [];
+  const selected = data.filter(d => ids.includes(d.id));
+  if (!selected.length) { showToast('No matching rows found for selected IDs.', 'warning'); return; }
+  showToast('⏳ Generating ' + selected.length + ' PDF report(s)…', 'info');
+  const stamp = typeof stvNowStamp === 'function' ? stvNowStamp() : new Date().toISOString().slice(0,10).replace(/-/g,'');
+  try {
+    const zip = (window.JSZip) ? new window.JSZip() : new JSZip();
+    for (let i = 0; i < selected.length; i++) {
+      const row = selected[i];
+      const stvRow = (typeof buildStvDirectRowFromResults === 'function') ? buildStvDirectRowFromResults(row, row.time ?? row.Test_date ?? '') : null;
+      if (!stvRow) continue;
+      const dosePlan = (typeof fetchStvDirectDosePlan === 'function') ? await fetchStvDirectDosePlan(stvRow) : null;
+      const reportData = (typeof mapSTVDirectReportRow === 'function') ? mapSTVDirectReportRow(stvRow, dosePlan) : null;
+      if (!reportData) continue;
+      const blob = await generateStvDirectPdfBlob(reportData);
+      const fileName = (typeof buildSTVReportFileName === 'function') ? buildSTVReportFileName(stvRow, stamp) : ('report-' + (i + 1) + '.pdf');
+      zip.file(fileName, blob);
+    }
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const zipName = 'results-bulk-pdf-' + stamp + '.zip';
+    if (typeof downloadBlobFile === 'function') { downloadBlobFile(zipName, zipBlob); }
+    else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(zipBlob);
+      a.download = zipName; a.click();
+    }
+    showToast('Bulk PDF exported ✅ (' + selected.length + ' reports)', 'success');
+  } catch (err) {
+    console.error('Results bulk PDF failed:', err);
+    showToast('Bulk PDF failed: ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
 // ===== Weakness 13: CSV export for QC Data =====
 function exportQcCsv() {
   const data = window.qcData || (typeof qcData !== 'undefined' ? qcData : []);
@@ -20053,6 +20244,7 @@ function renderResults() {
   // 1. Filter Data
   const devFilter = (document.getElementById(`search-results-dev`)?.value || '').toLowerCase();
   const testFilter = (document.getElementById(`search-results-test`)?.value || '').toLowerCase();
+  const globalFilter = (document.getElementById('search-results-global')?.value || '').toLowerCase();
   const dFrom = document.getElementById(`date-results-from`)?.value;
   const dTo = document.getElementById(`date-results-to`)?.value;
 
@@ -20071,8 +20263,72 @@ function renderResults() {
     });
   }
 
+  // Global search across all text fields
+  if (globalFilter) {
+    filtered = filtered.filter(d => {
+      const haystack = [
+        d.clientId ?? d.Client_ID ?? '',
+        d.farmId ?? d.Farm_ID ?? '',
+        d.crop ?? '',
+        d.tid ?? '',
+        d.did ?? '',
+        d.time ?? d.Test_date ?? '',
+        d.Place ?? d.place ?? '',
+        d.GPS ?? d.gps ?? '',
+        d.State ?? d.state ?? ''
+      ].join(' ').toLowerCase();
+      return haystack.includes(globalFilter);
+    });
+  }
+
+  // Sort
+  const ss = window.resultsSortState;
+  if (ss && ss.col) {
+    const metricMap = { ph: 'ph', ec: 'ec', oc: 'oc', n: 'n', p: 'p', k: 'k', s: 's', zn: 'zn', cu: 'cu', fe: 'fe', mn: 'mn', b: 'b' };
+    filtered = filtered.slice().sort((a, b) => {
+      let va, vb;
+      if (ss.col === 'status') {
+        va = typeof evaluateTestSuccess === 'function' ? evaluateTestSuccess(a) : '';
+        vb = typeof evaluateTestSuccess === 'function' ? evaluateTestSuccess(b) : '';
+      } else if (ss.col === 'tid') { va = String(a.tid ?? ''); vb = String(b.tid ?? ''); }
+      else if (ss.col === 'did') { va = String(a.did ?? ''); vb = String(b.did ?? ''); }
+      else if (ss.col === 'clientId') { va = String(a.clientId ?? a.Client_ID ?? ''); vb = String(b.clientId ?? b.Client_ID ?? ''); }
+      else if (ss.col === 'farmId') { va = String(a.farmId ?? a.Farm_ID ?? ''); vb = String(b.farmId ?? b.Farm_ID ?? ''); }
+      else if (ss.col === 'crop') { va = String(a.crop ?? ''); vb = String(b.crop ?? ''); }
+      else if (ss.col === 'time') { va = String(a.time ?? a.Test_date ?? ''); vb = String(b.time ?? b.Test_date ?? ''); }
+      else if (metricMap[ss.col]) {
+        // numeric sort for metric columns — compute on the fly
+        const rA = a.raw || {}; const rB = b.raw || {};
+        const getM = (r, k) => {
+          if (k === 'ph') return toNum(calcMetric(r, 'ph'));
+          if (k === 'ec') return toNum(calcMetric(r, 'ec'));
+          if (k === 'oc') return toNum(getSTV(r, 'oc'));
+          if (k === 'n') return toNum(addStrict(getSTV(r, 'ammonium'), getSTV(r, 'nitrate')));
+          if (k === 'p') return toNum(getSTV(r, 'phosphorus'));
+          if (k === 'k') return toNum(getSTV(r, 'potassium'));
+          if (k === 's') return toNum(getSTV(r, 'sulphur'));
+          if (k === 'zn') return toNum(subStrict(getSTV(r, 'zinccopper'), getSTV(r, 'copper')));
+          if (k === 'cu') return toNum(getSTV(r, 'copper'));
+          if (k === 'fe') return toNum(getSTV(r, 'iron'));
+          if (k === 'mn') return toNum(getSTV(r, 'manganese'));
+          if (k === 'b') return toNum(getSTV(r, 'boron'));
+          return null;
+        };
+        va = getM(rA, ss.col) ?? -Infinity;
+        vb = getM(rB, ss.col) ?? -Infinity;
+        return ss.asc ? va - vb : vb - va;
+      } else { va = ''; vb = ''; }
+      if (va < vb) return ss.asc ? -1 : 1;
+      if (va > vb) return ss.asc ? 1 : -1;
+      return 0;
+    });
+  }
+
+  // Store filtered for CSV export
+  window.currentFilteredResults = filtered;
+
   // 2. Pagination Logic
-  const perPage = (typeof ROWS_PER_PAGE === 'number' && ROWS_PER_PAGE > 0) ? ROWS_PER_PAGE : 50;
+  const perPage = window.resultsRowsPerPage || (typeof ROWS_PER_PAGE === 'number' && ROWS_PER_PAGE > 0 ? ROWS_PER_PAGE : 50);
   const totalRows = filtered.length;
   const maxPage = Math.ceil(totalRows / perPage) || 1;
   if (pageState[mod] > maxPage) pageState[mod] = maxPage;
@@ -20083,6 +20339,15 @@ function renderResults() {
   // UPDATE PAGINATION TEXT (fixed, consistent)
   setPaginationText('results', startIdx, endIdx, totalRows);
 
+  // Update sort indicator spans
+  const siCols = ['status','clientId','farmId','crop','tid','did','time','ph','ec','oc','n','p','k','s','zn','cu','fe','mn','b'];
+  siCols.forEach(c => {
+    const el = document.getElementById('results-si-' + c);
+    if (!el) return;
+    if (ss && ss.col === c) { el.textContent = ss.asc ? ' ▲' : ' ▼'; }
+    else { el.textContent = ''; }
+  });
+
   // 3. Slice Data
   const pageData = filtered.slice(startIdx, endIdx);
 
@@ -20091,6 +20356,71 @@ function renderResults() {
       rgbData.length === 0 ? 'No data loaded yet. Use Import CSV to add RGB data.' : 'Try adjusting your filters.');
     return;
   }
+
+  // Column visibility helper
+  window.resultsHiddenCols = window.resultsHiddenCols instanceof Set ? window.resultsHiddenCols : new Set();
+  const cv = (key) => window.resultsHiddenCols.has(key) ? ' style="display:none"' : '';
+
+  // Parameter-aware color class (W17: pH and EC get threshold-based coloring)
+  const paramSt = (param, numVal) => {
+    const n = toNum(numVal);
+    if (n == null) return '';
+    if (param === 'ph') {
+      if (n < 4.5 || n > 9.0) return 'val-red';
+      if (n < 5.5 || n > 8.5) return 'val-yellow';
+      return '';
+    }
+    if (param === 'ec') {
+      if (n > 4.0) return 'val-red';
+      if (n > 2.0) return 'val-yellow';
+      return '';
+    }
+    // For all other parameters: ≤ 0 is invalid
+    return n <= 0 ? 'val-red' : '';
+  };
+
+  // Soil health band label for cell tooltip (W16)
+  const healthTip = (param, numVal) => {
+    const n = toNum(numVal);
+    if (n == null) return '';
+    if (param === 'ph') {
+      if (n < 4.5) return 'Strongly Acidic';
+      if (n < 5.5) return 'Acidic';
+      if (n <= 6.5) return 'Slightly Acidic';
+      if (n <= 7.5) return 'Neutral';
+      if (n <= 8.5) return 'Slightly Alkaline';
+      return 'Alkaline';
+    }
+    if (param === 'ec') {
+      if (n < 0.1) return 'Very Low';
+      if (n <= 0.5) return 'Low';
+      if (n <= 2.0) return 'Normal';
+      if (n <= 4.0) return 'Mod. Saline';
+      return 'Highly Saline';
+    }
+    if (param === 'oc') {
+      if (n < 0.5) return 'Very Low';
+      if (n < 0.75) return 'Low';
+      if (n < 1.5) return 'Medium';
+      return 'High';
+    }
+    if (param === 'n') {
+      if (n < 100) return 'Low';
+      if (n < 250) return 'Medium';
+      return 'High';
+    }
+    if (param === 'p') {
+      if (n < 10) return 'Low';
+      if (n < 25) return 'Medium';
+      return 'High';
+    }
+    if (param === 'k') {
+      if (n < 100) return 'Low';
+      if (n < 250) return 'Medium';
+      return 'High';
+    }
+    return '';
+  };
 
   // 4. Render Rows
   pageData.forEach((d, idx) => {
@@ -20144,22 +20474,22 @@ function renderResults() {
     const mn = fmt2(mnN);
     const b  = fmt2(bN);
 
-    const st = (numVal) => {
-      const n = toNum(numVal);
-      return (n != null && n <= 0) ? 'val-red' : '';
-    };
-
     const eTid  = escapeHtml(d.tid  ?? '');
     const eDid  = escapeHtml(d.did  ?? '');
     const eCrop = escapeHtml(d.crop ?? '');
     const eTime = escapeHtml(d.time ?? d.Test_date ?? '');
+
+    const phTip = healthTip('ph', phN); const ecTip = healthTip('ec', ecN);
+    const ocTip = healthTip('oc', ocN); const nTip  = healthTip('n', nN);
+    const pTip  = healthTip('p', pN);  const kTip  = healthTip('k', kN);
+
     tr.innerHTML = `<td>${globalIdx}</td><td class="${tClass}">${testStatus}</td>
       <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${eTid}', '${eDid}', '${eCrop}', '${eTime}')">Download report</button></td>
-      <td>${escapeHtml(d.clientId ?? d.Client_ID ?? '') || '-'}</td><td>${escapeHtml(d.farmId ?? d.Farm_ID ?? '') || '-'}</td><td>${eCrop || '-'}</td><td>${eTid}</td><td>${eDid}</td><td class="col-date">${eTime}</td>
-      <td>${escapeHtml(d.Place ?? d.place ?? '') || '-'}</td><td>${escapeHtml(d.GPS ?? d.gps ?? '') || '-'}</td><td>${escapeHtml(d.State ?? d.state ?? '') || '-'}</td>
-      <td class="${st(phN)}">${ph}</td><td class="${st(ecN)}">${ec}</td><td class="${st(ocN)}">${oc}</td><td class="${st(nN)}">${n}</td>
-      <td class="${st(pN)}">${p}</td><td class="${st(kN)}">${k}</td><td class="${st(sN)}">${s}</td><td class="${st(znN)}">${zn}</td>
-      <td class="${st(cuN)}">${cu}</td><td class="${st(feN)}">${fe}</td><td class="${st(mnN)}">${mn}</td><td class="${st(bN)}">${b}</td>`;
+      <td${cv('clientId')}>${escapeHtml(d.clientId ?? d.Client_ID ?? '') || '-'}</td><td${cv('farmId')}>${escapeHtml(d.farmId ?? d.Farm_ID ?? '') || '-'}</td><td${cv('crop')}>${eCrop || '-'}</td><td>${eTid}</td><td>${eDid}</td><td class="col-date">${eTime}</td>
+      <td${cv('Place')}>${escapeHtml(d.Place ?? d.place ?? '') || '-'}</td><td${cv('GPS')}>${escapeHtml(d.GPS ?? d.gps ?? '') || '-'}</td><td${cv('State')}>${escapeHtml(d.State ?? d.state ?? '') || '-'}</td>
+      <td class="${paramSt('ph',phN)}"${phTip ? ` title="${phTip}"` : ''}>${ph}</td><td class="${paramSt('ec',ecN)}"${ecTip ? ` title="${ecTip}"` : ''}>${ec}</td><td class="${paramSt('oc',ocN)}"${ocTip ? ` title="${ocTip}"` : ''}>${oc}</td><td class="${paramSt('n',nN)}"${nTip ? ` title="${nTip}"` : ''}>${n}</td>
+      <td class="${paramSt('p',pN)}"${pTip ? ` title="${pTip}"` : ''}>${p}</td><td class="${paramSt('k',kN)}"${kTip ? ` title="${kTip}"` : ''}>${k}</td><td class="${paramSt('s',sN)}">${s}</td><td class="${paramSt('zn',znN)}">${zn}</td>
+      <td class="${paramSt('cu',cuN)}">${cu}</td><td class="${paramSt('fe',feN)}">${fe}</td><td class="${paramSt('mn',mnN)}">${mn}</td><td class="${paramSt('b',bN)}">${b}</td>`;
 
     tbody.appendChild(tr);
   });
