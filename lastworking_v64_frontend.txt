@@ -14640,8 +14640,8 @@ function normalizeQcCriteriaRows(rows) {
 function normalizeBlankRows(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map(r => ({
-      p: pickField_(r, ['parameter', 'param', 'p'], ''),
-      val: pickField_(r, ['blankvalue', 'blank_value', 'blank value', 'value', 'val'], '')
+      p: (pickField_(r, ['parameter', 'param', 'p'], '') || '').toLowerCase().trim(),
+      val: parseFloat(pickField_(r, ['blankvalue', 'blank_value', 'blank value', 'value', 'val'], '') || '0') || 0
     }))
     .filter(rowHasValues_);
 }
@@ -17481,14 +17481,20 @@ function evaluateTestSuccess(row) {
     if (!row || !row.raw) return 'PASS';
     let anyFail = false;
     dbCriteria.forEach(rule => {
-        const rawObj = row.raw[rule.p];
+        // Bug 2 fix: case-insensitive parameter key match across Criteria and Blanks tables
+        const ruleP = (rule.p || '').toLowerCase().trim();
+        // Try normalized key first, fall back to raw key to handle mixed-case raw objects
+        const rawObj = row.raw[ruleP] || row.raw[rule.p];
         if (!rawObj) return;
         let val = parseFloat(calcMetric(row.raw, rule.p));
-        const blank = blankData.find(b => b.p === rule.p)?.val || 0;
+        // Bug 2 fix: case-insensitive lookup; Bug 1 fix: blankData.val is already parseFloat'd
+        const blankEntry = blankData.find(b => (b.p || '').toLowerCase().trim() === ruleP);
+        const blank = blankEntry ? (blankEntry.val || 0) : 0;
         const finalVal = val - blank;
         let fail = false;
         if (rule.rel === 'between') {
-            if (finalVal >= rule.l && finalVal <= rule.u) fail = true;
+            // Bug 4 fix: 'between' = PASS zone; value outside [l, u] → FAIL
+            if (finalVal < rule.l || finalVal > rule.u) fail = true;
         } else if (rule.rel === '<') {
             if (finalVal < rule.u) fail = true;
         } else if (rule.rel === '>') {
@@ -21130,19 +21136,21 @@ function renderResultsDetails(row) {
 
     const rowsHtml = [];
     dbCriteria.forEach(rule => {
-        const rawObj = row.raw?.[rule.p];
+        const ruleP = (rule.p || '').toLowerCase().trim();
+        const rawObj = row.raw?.[ruleP] || row.raw?.[rule.p];
         let val = 0, blank = 0, finalVal = 0;
 
         if (rawObj) {
             val   = parseFloat(window.calcMetric(row.raw, rule.p));
-            blank = blankData.find(b => b.p === rule.p)?.val || 0;
+            const blankEntry = blankData.find(b => (b.p || '').toLowerCase().trim() === ruleP);
+            blank = blankEntry ? (blankEntry.val || 0) : 0;
             finalVal = val - blank;
         }
 
         let fail = false;
         if(rawObj) {
             if (rule.rel === 'between') {
-                if (finalVal >= rule.l && finalVal <= rule.u) fail = true;
+                if (finalVal < rule.l || finalVal > rule.u) fail = true;
             } else if (rule.rel === '<') {
                 if (finalVal < rule.u) fail = true;
             } else if (rule.rel === '>') {
@@ -23069,19 +23077,21 @@ function renderDeviceResultsDetails(row) {
 
   const rowsHtml = [];
   dbCriteria.forEach(rule => {
-    const rawObj = row.raw?.[rule.p];
+    const ruleP = (rule.p || '').toLowerCase().trim();
+    const rawObj = row.raw?.[ruleP] || row.raw?.[rule.p];
     let val = 0, blank = 0, finalVal = 0;
 
     if (rawObj) {
       val = parseFloat(window.calcMetric(row.raw, rule.p));
-      blank = blankData.find(b => b.p === rule.p)?.val || 0;
+      const blankEntry = blankData.find(b => (b.p || '').toLowerCase().trim() === ruleP);
+      blank = blankEntry ? (blankEntry.val || 0) : 0;
       finalVal = val - blank;
     }
 
     let fail = false;
     if (rawObj) {
       if (rule.rel === 'between') {
-        if (finalVal >= rule.l && finalVal <= rule.u) fail = true;
+        if (finalVal < rule.l || finalVal > rule.u) fail = true;
       } else if (rule.rel === '<') {
         if (finalVal < rule.u) fail = true;
       } else if (rule.rel === '>') {

@@ -4140,7 +4140,7 @@ function saveServiceHistory(dataObj) {
 // ... (Rest of Savers/Loaders: saveManualEntry, saveToSheet_, etc. - Keep existing) ...
 function saveToSheet_(s, r, h) { const ss = SpreadsheetApp.getActiveSpreadsheet(); let sh = ss.getSheetByName(s); if (!sh) sh = ss.insertSheet(s); if (h) sh.getRange(1, 1, 1, h.length).setValues([h]); if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent(); if (r.length) sh.getRange(2, 1, r.length, r[0].length).setValues(r); }
 
-function saveTestSuccessCriteria(d) { saveToSheet_('Criteria', d.map(o => [o.s, o.p, o.m, o.l, o.rel, o.u, o.re, o.ac]), ['Spectro', 'Parameter', 'Metric', 'L.Limit', 'Relation', 'U.Limit', 'Reason', 'Action']); }
+function saveTestSuccessCriteria(d) { saveToSheet_('Criteria', d.map(o => [o.s, o.p, o.m, o.l, o.rel, o.u, o.re, o.ac]), ['Spectro', 'Parameter', 'Metric', 'L.Limit', 'Relation', 'U.Limit', 'Reason', 'Action']); CacheService.getScriptCache().remove('initialData:v1'); }
 
 function saveSTVEquations(d) {
   saveToSheet_(
@@ -4155,6 +4155,7 @@ function saveSTVEquations(d) {
   // NEW: append-only immutable log
   const run = appendSTVRunLog_(d, version);
 
+  CacheService.getScriptCache().remove('initialData:v1');
   return { status: 'OK', stvVersion: version, stvRunId: run.stvRunId, stvSavedAt: run.stvSavedAt };
 }
 
@@ -4552,7 +4553,7 @@ function upsertSoilTestResult_(rowObj) {
   sh.getRange(targetRow, 1, 1, outRow.length).setValues([outRow]);
 }
 
-function saveBlanks(d) { saveToSheet_('Blanks', d.map(o => [o.p, o.val]), ['Parameter', 'Blank Value']); }
+function saveBlanks(d) { saveToSheet_('Blanks', d.map(o => [o.p, o.val]), ['Parameter', 'Blank Value']); CacheService.getScriptCache().remove('initialData:v1'); }
 function saveDeviceRegistry(d) { saveToSheet_('Device_Registry', d, ['Client', 'Company', 'PAN', 'GSTIN', 'Address', 'Device_ID', 'SIM', 'Aadhaar', 'Mobile', 'MO_Name', 'Installation_Date', 'Place', 'LatLon', 'PIN_code', 'Block', 'District', 'State', 'ProdBatch_ID']); }
 
 function saveServiceTicketWithFile(data) {
