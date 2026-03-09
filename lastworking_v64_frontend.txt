@@ -15567,11 +15567,9 @@ function toggleResultsWhyFail(btn, row) {
     let statusNote = '';
     if (finalVal != null) {
       if (rule.rel === 'between') {
-        if (finalVal < rule.l || finalVal > rule.u) {
+        if (finalVal >= rule.l && finalVal <= rule.u) {
           fail = true;
-          statusNote = finalVal < rule.l
-            ? `Below L (${(rule.l - finalVal).toFixed(4)} under)`
-            : `Above U (${(finalVal - rule.u).toFixed(4)} over)`;
+          statusNote = `Inside FAIL zone [${rule.l} - ${rule.u}]`;
         }
       } else if (rule.rel === '<' && finalVal < rule.u)  { fail = true; statusNote = `${finalVal.toFixed(4)} < ${rule.u}`; }
       else if (rule.rel === '>' && finalVal > rule.l)    { fail = true; statusNote = `${finalVal.toFixed(4)} > ${rule.l}`; }
@@ -17690,8 +17688,8 @@ function evaluateTestSuccess(row) {
         const blank = blankEntry ? (blankEntry.val || 0) : 0;
         const finalVal = val - blank;
         if (rule.rel === 'between') {
-            // Bug 4 fix: 'between' = PASS zone; value outside [l, u] → FAIL
-            return (finalVal < rule.l || finalVal > rule.u);
+            // Each criteria row defines a FAIL zone: value falls INSIDE [l, u] → FAIL
+            return (finalVal >= rule.l && finalVal <= rule.u);
         } else if (rule.rel === '<') {
             return (finalVal < rule.u);
         } else if (rule.rel === '>') {
@@ -21395,7 +21393,7 @@ function renderResultsDetails(row) {
         let fail = false;
         if(rawObj) {
             if (rule.rel === 'between') {
-                if (finalVal < rule.l || finalVal > rule.u) fail = true;
+                if (finalVal >= rule.l && finalVal <= rule.u) fail = true;
             } else if (rule.rel === '<') {
                 if (finalVal < rule.u) fail = true;
             } else if (rule.rel === '>') {
@@ -23338,7 +23336,7 @@ function renderDeviceResultsDetails(row) {
     let fail = false;
     if (rawObj) {
       if (rule.rel === 'between') {
-        if (finalVal < rule.l || finalVal > rule.u) fail = true;
+        if (finalVal >= rule.l && finalVal <= rule.u) fail = true;
       } else if (rule.rel === '<') {
         if (finalVal < rule.u) fail = true;
       } else if (rule.rel === '>') {
