@@ -15524,10 +15524,22 @@ if (document.readyState === 'loading') {
   _startStaleDataWatcher();
 }
 
-// ===== Enhancement C: Per-row "Why Test QC FAIL" inline explanation =====
-function toggleResultsWhyFail(btn, row) {
+// ===== Enhancement C: Per-row "Why Test QC?" criteria detail popup =====
+function toggleResultsWhyFail(btn, row, status) {
   if (!row || !row.raw) return;
   if (typeof ensureRowRaw === 'function') ensureRowRaw(row);
+
+  // Update modal title based on row status
+  const titleEl = document.getElementById('why-fail-modal-title');
+  if (titleEl) {
+    if (status === 'PASS') {
+      titleEl.textContent = '✅ Test QC — All Conditions PASSED';
+    } else if (status === 'UNKNOWN') {
+      titleEl.textContent = '⚠️ Test QC — UNKNOWN (Criteria not loaded)';
+    } else {
+      titleEl.textContent = '🔍 Test QC — Why FAIL?';
+    }
+  }
 
   // Build modal metadata
   const did    = escapeHtml(row.did   || row.Device_ID || row.d || '-');
@@ -21169,10 +21181,15 @@ function renderResults() {
       return parts.length ? parts.join(' | ') : null;
     };
 
-    // Enhancement C: "Why FAIL" ⓘ button for FAIL rows — stored as data-idx for row lookup
+    // Enhancement C: "Why Test QC?" ⓘ button for FAIL and PASS rows — opens criteria detail modal
+    const _wfIdx = startIdx + idx;
     const whyFailBtn = testStatus === 'FAIL'
-      ? `<button title="Why FAIL?" onclick="toggleResultsWhyFail(this, window.currentFilteredResults?.[${startIdx + idx}])" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;color:#dc2626;">ⓘ</button>`
-      : '';
+      ? `<button title="Why FAIL? — view Test Failure Criteria detail" onclick="toggleResultsWhyFail(this, window.currentFilteredResults?.[${_wfIdx}], 'FAIL')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;color:#dc2626;">ⓘ</button>`
+      : testStatus === 'PASS'
+        ? `<button title="View Test Failure Criteria detail (all conditions passed)" onclick="toggleResultsWhyFail(this, window.currentFilteredResults?.[${_wfIdx}], 'PASS')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;color:#16a34a;">ⓘ</button>`
+        : testStatus === 'UNKNOWN'
+          ? `<button title="View Test Failure Criteria detail (criteria not loaded)" onclick="toggleResultsWhyFail(this, window.currentFilteredResults?.[${_wfIdx}], 'UNKNOWN')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;color:#d97706;">ⓘ</button>`
+          : '';
 
     tr.innerHTML = `<td>${globalIdx}</td><td class="${tClass}">${testStatus}${whyFailBtn}</td>
       <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${eTid}', '${eDid}', '${eCrop}', '${eTime}')">Download report</button></td>
@@ -38160,7 +38177,7 @@ function _dbSortDefaultFirst_(arr) {
   <div id="why-fail-modal" role="dialog" aria-modal="true" aria-labelledby="why-fail-modal-title" onclick="if(event.target===this)closeWhyFailModal()">
     <div id="why-fail-modal-box">
       <div id="why-fail-modal-header">
-        <h3 id="why-fail-modal-title">🔍 Test QC — Why FAIL?</h3>
+        <h3 id="why-fail-modal-title">🔍 Test QC — Criteria Detail</h3>
         <button id="why-fail-modal-close" onclick="closeWhyFailModal()" title="Close">✕</button>
       </div>
       <div id="why-fail-modal-meta"></div>
