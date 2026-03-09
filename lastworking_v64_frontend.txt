@@ -8232,7 +8232,7 @@
               <thead>
                 <tr>
                   <th>#</th>
-                  <th class="results-th-sortable" onclick="sortResultsTable('status')" title="Sort by Test QC status (pass/fail per Success Criteria)">Test QC<span id="results-si-status"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('status')" title="Sort by Test QC status (pass/fail per Test Failure Criteria; limits are in Abs/Val space)">Test QC<span id="results-si-status"></span></th>
                   <th>Report</th>
                   <th title="Jump to QC Histogram for this row">QC View</th>
                   <th class="results-th-sortable" onclick="sortResultsTable('clientId')" title="Sort by Client ID">Client ID<span id="results-si-clientId"></span></th>
@@ -8377,7 +8377,7 @@
       </div>
 
       <div class="tab-nav">
-        <button class="tab-btn active" onclick="tab('criteria', event)">Success Criteria</button>
+        <button class="tab-btn active" onclick="tab('criteria', event)">Test Failure Criteria</button>
         <button class="tab-btn" onclick="tab('stv', event)">STV Logic</button>
         <button class="tab-btn" onclick="tab('qc-criteria', event)">Device QA/QC Criteria</button>
         <button class="tab-btn" onclick="tab('blanks', event)">Blank Values</button>
@@ -8393,10 +8393,10 @@
         </div>
       </div>
 
-      <!-- Success Criteria tab -->
+      <!-- Test Failure Criteria tab -->
       <div id="tab-criteria" class="tab-content active">
         <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-          <h3>Test Success Criteria</h3>
+          <h3>Test Failure Criteria <span style="font-size:11px;font-weight:normal;color:#6b7280;">(limits are in Abs/Val space — evaluated against raw absorbance, not STV-converted concentrations)</span></h3>
           <div style="display:flex; gap:6px; align-items:center;">
             <button class="btn btn-green" onclick="addCriteriaRow()">+ Row</button>
             <button class="btn btn-outline btn-red" onclick="deleteCriteriaRow()">− Row</button>
@@ -12836,7 +12836,7 @@ function toggleTabInfo(button, moduleId) {
   if (!panel || !content) return;
 
   const moduleText = {
-    db: 'Manage master data like success criteria, STV logic, and QC/Prod batch lists used by the Insoil system.',
+    db: 'Manage master data like test failure criteria, STV logic, and QC/Prod batch lists used by the Insoil system.',
     devices: 'Register installed devices and service activity, and view device details used across the Insoil system.',
     fertilizer: 'Build nutrient recommendations from soil tests and export fertilizer plans for the Insoil system.',
     inventory: 'Track parts, built units, liquidations, and approvals that drive inventory updates in the Insoil system.'
@@ -15414,14 +15414,14 @@ function updateResultsDbHealthBadge() {
   const color  = anyEmpty ? '#b45309' : '#15803d';
   const bg     = anyEmpty ? 'rgba(245,158,11,0.12)' : 'rgba(21,128,61,0.1)';
   const border = anyEmpty ? '1px solid #f59e0b' : '1px solid #86efac';
-  badge.textContent = `${icon} Criteria: ${cCount} · Blanks: ${bCount} · STV: ${sCount}`;
+  badge.textContent = `${icon} Fail Criteria: ${cCount} · Blanks: ${bCount} · STV: ${sCount}`;
   badge.style.color      = color;
   badge.style.background = bg;
   badge.style.border     = border;
   badge.style.display    = '';
   badge.title = anyEmpty
     ? '⚠️ One or more DB tables are empty — Test QC will show UNKNOWN'
-    : `DB tables loaded: Criteria ${cCount} rules · Blanks ${bCount} · STV ${sCount}`;
+    : `DB tables loaded: Test Failure Criteria ${cCount} rules · Blanks ${bCount} · STV ${sCount} (limits evaluated in Abs/Val space)`;
 }
 
 // ===== Enhancement B: Reload DB tables button =====
@@ -15523,7 +15523,7 @@ function toggleResultsWhyFail(btn, row) {
   detailRow.style.background = '#fff7ed';
   const colspan = tr.querySelectorAll('td').length;
   detailRow.innerHTML = `<td colspan="${colspan}" style="font-size:11px; padding:6px 14px; color:#92400e; border-top:1px solid #fed7aa;">
-    🔍 <b>Why FAIL:</b> ${failRows.length ? failRows.join(' &nbsp;|&nbsp; ') : 'No matching FAIL rules found — check Criteria table.'}
+    🔍 <b>Why FAIL</b> <span style="color:#78350f">(Test Failure Criteria — all values in Abs/Val space, not STV concentrations):</span> ${failRows.length ? failRows.join(' &nbsp;|&nbsp; ') : 'No matching FAIL rules found — check Test Failure Criteria table.'}
   </td>`;
   tr.parentNode.insertBefore(detailRow, tr.nextSibling);
 }
@@ -21281,7 +21281,7 @@ function renderResultsDetails(row) {
     const contextHtml = `<tr style="background:#f0fdf4;">
       <td colspan="9" style="font-size:11px; padding:4px 10px; color:#15803d;">
         📋 <b>DB context:</b> Blanks used: [${appliedBlanks || 'none'}] &nbsp;|&nbsp;
-        Criteria rules: ${(dbCriteria||[]).length} &nbsp;|&nbsp; STV equations: ${(stvData||[]).length}
+        Failure Criteria rules (Abs/Val space): ${(dbCriteria||[]).length} &nbsp;|&nbsp; STV equations: ${(stvData||[]).length}
       </td>
     </tr>`;
 
@@ -22165,7 +22165,7 @@ const ACCESS_TREE = [
         ]}
     ]},
     { id: 'db', label: 'Database', children: [
-        { id: 'db.criteria', label: 'Success Criteria' },
+        { id: 'db.criteria', label: 'Test Failure Criteria' },
         { id: 'db.stv', label: 'STV Logic' },
         { id: 'db.qc-criteria', label: 'QA/QC Criteria' },
         { id: 'db.blanks', label: 'Blank Values' },
@@ -23686,7 +23686,7 @@ function saveCriteria() {
             google.script.run
                 .withSuccessHandler(function () {
                     if (restore) restore();
-                    showToast('Test Success Criteria saved.', 'success');
+                    showToast('Test Failure Criteria saved.', 'success');
                 })
                 .withFailureHandler(function (err) {
                     if (restore) restore();
@@ -27882,7 +27882,7 @@ document.addEventListener('DOMContentLoaded', function () {
 // === AUTO-SAVE IMPLEMENTATION ===
 document.addEventListener('DOMContentLoaded', function() {
 
-    // 1. Auto-save Success Criteria (dbCriteria)
+    // 1. Auto-save Test Failure Criteria (dbCriteria)
     const criteriaTable = document.getElementById('tbl-criteria-editable');
     if (criteriaTable) {
         criteriaTable.addEventListener('change', function(e) {
