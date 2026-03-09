@@ -8148,9 +8148,23 @@
             <button class="btn btn-indigo" onclick="exportResultsBulkPdf()" id="btn-results-bulk-pdf" title="Export selected rows as PDF reports">Bulk PDF</button>
             <button class="btn btn-outline" onclick="toggleResultsColVisPanel()" title="Toggle column visibility">⊞ Columns</button>
             <button class="btn btn-outline" onclick="toggleResultsSparklines()" id="btn-results-sparklines" title="Toggle trend sparklines per row (last 10 readings for same device)">📊 Sparklines</button>
+            <button class="btn btn-outline" onclick="toggleResultsAdvancedFilterPanel()" id="btn-results-adv-filter" title="Advanced column-level filter">⚙ Filter</button>
+            <span id="results-adv-filter-chip" style="display:none; font-size:11px; background:#fef3c7; border:1px solid #f59e0b; border-radius:12px; padding:2px 8px; color:#92400e; cursor:pointer;" onclick="clearAllResultsAdvancedFilters()" title="Click to clear all filters">🔍 Filtered ✕</span>
             <span id="stv-version-tag" style="font-size:0.8rem; color:#555; margin-left:8px;"></span>
           </div>
           <div id="results-col-vis-panel" style="display:none; flex-wrap:wrap; gap:6px; padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; margin-top:4px; max-width:700px;"></div>
+          <!-- Advanced Filter Panel -->
+          <div id="results-adv-filter-panel" style="display:none; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px 14px; margin-top:6px; max-width:900px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+              <span style="font-size:12px; font-weight:600; color:#334155;">⚙ Column Filters <small style="font-weight:400; color:#64748b;">(all conditions are ANDed)</small></span>
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-teal" style="font-size:11px; padding:3px 10px;" onclick="addResultsFilterCondition()">+ Add Condition</button>
+                <button class="btn btn-outline" style="font-size:11px; padding:3px 10px;" onclick="applyResultsAdvancedFilters()">Apply</button>
+                <button class="btn btn-outline" style="font-size:11px; padding:3px 10px; color:#ef4444;" onclick="clearAllResultsAdvancedFilters()">Clear All</button>
+              </div>
+            </div>
+            <div id="results-filter-conditions" style="display:flex; flex-direction:column; gap:6px;"></div>
+          </div>
 
           <div class="toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%;">
             <div
@@ -8203,7 +8217,7 @@
               <thead>
                 <tr>
                   <th>#</th>
-                  <th class="results-th-sortable" onclick="sortResultsTable('status')" title="Sort by Instrument Status">Instrument Status<span id="results-si-status"></span></th>
+                  <th class="results-th-sortable" onclick="sortResultsTable('status')" title="Sort by Test QC status (pass/fail per Success Criteria)">Test QC<span id="results-si-status"></span></th>
                   <th>Report</th>
                   <th title="Jump to QC Histogram for this row">QC View</th>
                   <th class="results-th-sortable" onclick="sortResultsTable('clientId')" title="Sort by Client ID">Client ID<span id="results-si-clientId"></span></th>
@@ -15482,7 +15496,7 @@ function exportResultsCsv() {
   const addStrict = (a, b) => { const na = toNum(a), nb = toNum(b); if (na == null && nb == null) return null; return (na ?? 0) + (nb ?? 0); };
   const subStrict = (a, b) => { const na = toNum(a), nb = toNum(b); if (na == null || nb == null) return null; return na - nb; };
   const esc = v => { const s = String(v ?? ''); if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"'; return s; };
-  const header = ['Instrument Status','Test ID','Device ID','Date','Client ID','Farm ID','Crop','Place','GPS','State',
+  const header = ['Test QC','Test ID','Device ID','Date','Client ID','Farm ID','Crop','Place','GPS','State',
     'pH (-)','EC (dS/m)','Org Carbon (%)','Nitrogen (kg/ha)','Phosphorus (kg/ha)','Potassium (kg/ha)',
     'Sulphur (mg/kg)','Zinc (mg/kg)','Copper (mg/kg)','Iron (mg/kg)','Manganese (mg/kg)','Boron (mg/kg)'].map(esc).join(',');
   const rows = data.map(d => {
@@ -15566,36 +15580,59 @@ function renderResultsColVisPanel() {
 // ===== Results Enhancement 13: View QC Histogram jump =====
 function viewResultsQcHistogram(evt, deviceId, testId) {
   if (evt) { evt.stopPropagation(); }
-  // Switch to QAQC module using the nav() function
+
+  // Verify device exists in qcData before navigating
+  const qcSrc = window.qcData || (typeof qcData !== 'undefined' ? qcData : []);
+  const qcRowsForDevice = qcSrc.filter(function(r) {
+    return r && String(r.Device_ID ?? r.did ?? '') === String(deviceId);
+  });
+  if (!qcRowsForDevice.length) {
+    if (typeof showToast === 'function') showToast('No QC data found in Quarantine for Device ' + deviceId + '. Only quarantined rows appear in the QC Status View.', 'warning', 4000);
+    return;
+  }
+
+  // Navigate to QAQC module
   if (typeof nav === 'function') nav('qaqc');
-  // After a brief delay (let DOM settle), switch to QC Status View and set dropdowns
+
+  // After DOM settles, switch to QC Status View and auto-select the device
   setTimeout(function() {
     if (typeof setQaqcFocus === 'function') setQaqcFocus('status');
     setTimeout(function() {
       const devSel = document.getElementById('qaqc-status-device');
-      const testSel = document.getElementById('qaqc-status-test');
-      if (devSel) {
-        for (let i = 0; i < devSel.options.length; i++) {
-          if (devSel.options[i].value === deviceId) { devSel.selectedIndex = i; break; }
-        }
-        if (typeof onQaqcStatusDeviceChange === 'function') onQaqcStatusDeviceChange();
-        setTimeout(function() {
-          if (testSel) {
-            for (let i = 0; i < testSel.options.length; i++) {
-              if (testSel.options[i].value === testId) { testSel.selectedIndex = i; break; }
-            }
-          }
-          if (typeof renderQCStatus === 'function') {
-            const src = window.qcData || (typeof qcData !== 'undefined' ? qcData : []);
-            const row = src.find(function(r) {
-              return String(r.Device_ID ?? r.did ?? '') === deviceId && String(r.Test_ID ?? r.tid ?? '') === testId;
-            });
-            if (row) renderQCStatus(row);
-          }
-        }, 200);
+      if (!devSel) return;
+
+      // Try to select the exact device ID in the dropdown
+      let devFound = false;
+      for (let i = 0; i < devSel.options.length; i++) {
+        if (devSel.options[i].value === String(deviceId)) { devSel.selectedIndex = i; devFound = true; break; }
       }
-    }, 150);
-  }, 200);
+      if (!devFound) {
+        if (typeof showToast === 'function') showToast('Device ' + deviceId + ' not found in QC Status View dropdown.', 'warning', 3000);
+        return;
+      }
+
+      // Populate the test dropdown for this device
+      if (typeof onQaqcStatusDeviceChange === 'function') onQaqcStatusDeviceChange();
+
+      // After test dropdown is populated, try to select the most relevant test
+      // (prefer a test that matches the QC batch closest to the source test date)
+      setTimeout(function() {
+        const testSel = document.getElementById('qaqc-status-test');
+        if (testSel && testSel.options.length > 0) {
+          // First try exact test ID match in qcData
+          let matched = false;
+          for (let i = 0; i < testSel.options.length; i++) {
+            if (testSel.options[i].value === String(testId)) { testSel.selectedIndex = i; matched = true; break; }
+          }
+          // If no exact match, keep the first (most recent) test selected
+          if (!matched && testSel.options.length > 0) testSel.selectedIndex = 0;
+          // Trigger render
+          if (typeof onQaqcStatusTestChange === 'function') onQaqcStatusTestChange();
+          else if (typeof applyQaqcStatusSelection === 'function') applyQaqcStatusSelection();
+        }
+      }, 250);
+    }, 200);
+  }, 250);
 }
 
 // ===== Results Enhancement 14: Batch / Client / Farm chip filter =====
@@ -15650,6 +15687,184 @@ function setResultsChipFilter(type, value) {
   window.resultsChipFilter = (type && value) ? { type: type, value: value } : null;
   if (window.pageState) window.pageState['results'] = 1;
   if (typeof renderResults === 'function') renderResults();
+}
+
+// ===== Results Enhancement: Advanced Column Filter Panel =====
+// Columns available for filtering
+window._resultsFilterCols = [
+  { k: 'status',   label: 'Test QC',     type: 'text'   },
+  { k: 'did',      label: 'Device ID',   type: 'text'   },
+  { k: 'tid',      label: 'Test ID',     type: 'text'   },
+  { k: 'clientId', label: 'Client ID',   type: 'text'   },
+  { k: 'farmId',   label: 'Farm ID',     type: 'text'   },
+  { k: 'crop',     label: 'Crop',        type: 'text'   },
+  { k: 'time',     label: 'Date',        type: 'text'   },
+  { k: 'Place',    label: 'Place',       type: 'text'   },
+  { k: 'State',    label: 'State',       type: 'text'   },
+  { k: 'GPS',      label: 'GPS',         type: 'text'   },
+  { k: 'ph',  label: 'pH',               type: 'number' },
+  { k: 'ec',  label: 'EC (dS/m)',         type: 'number' },
+  { k: 'oc',  label: 'Org Carbon (%)',   type: 'number' },
+  { k: 'n',   label: 'Nitrogen (kg/ha)', type: 'number' },
+  { k: 'p',   label: 'Phosphorus (kg/ha)', type: 'number' },
+  { k: 'k',   label: 'Potassium (kg/ha)', type: 'number' },
+  { k: 's',   label: 'Sulphur (mg/kg)',  type: 'number' },
+  { k: 'zn',  label: 'Zinc (mg/kg)',     type: 'number' },
+  { k: 'cu',  label: 'Copper (mg/kg)',   type: 'number' },
+  { k: 'fe',  label: 'Iron (mg/kg)',     type: 'number' },
+  { k: 'mn',  label: 'Manganese (mg/kg)', type: 'number' },
+  { k: 'b',   label: 'Boron (mg/kg)',    type: 'number' }
+];
+// Active filter conditions array: [{col, op, val}, ...]
+window.resultsAdvancedFilters = [];
+// Next unique ID for condition rows
+window._resultsFilterNextId = 1;
+
+function toggleResultsAdvancedFilterPanel() {
+  const panel = document.getElementById('results-adv-filter-panel');
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : '';
+  if (!isOpen) _renderResultsFilterConditionRows();
+}
+
+function _resultsFilterColOptions(selectedK) {
+  return (window._resultsFilterCols || []).map(function(c) {
+    return '<option value="' + c.k + '"' + (c.k === selectedK ? ' selected' : '') + '>' + c.label + '</option>';
+  }).join('');
+}
+
+function _resultsFilterOpOptions(selectedOp, colType) {
+  const textOps = [['contains','contains'],['!contains','not contains'],['=','='],['!=','≠'],['starts','starts with']];
+  const numOps  = [['=','='],['!=','≠'],['<','<'],['<=','≤'],['>','>'],['>=',' ≥']];
+  const ops = colType === 'number' ? numOps : textOps;
+  return ops.map(function(o) {
+    return '<option value="' + o[0] + '"' + (o[0] === selectedOp ? ' selected' : '') + '>' + o[1] + '</option>';
+  }).join('');
+}
+
+function _renderResultsFilterConditionRows() {
+  const container = document.getElementById('results-filter-conditions');
+  if (!container) return;
+  const filters = window.resultsAdvancedFilters || [];
+  if (!filters.length) {
+    container.innerHTML = '<div style="font-size:11px; color:#94a3b8; font-style:italic; padding:4px 0;">No conditions yet. Click "+ Add Condition".</div>';
+    return;
+  }
+  container.innerHTML = filters.map(function(f, idx) {
+    const col = (window._resultsFilterCols || []).find(function(c) { return c.k === f.col; }) || { k: f.col, type: 'text' };
+    return '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">' +
+      '<select style="font-size:11px; padding:2px 4px; border:1px solid #cbd5e1; border-radius:4px; min-width:130px;" onchange="updateResultsFilterCondition(' + idx + ',\'col\',this.value)">' + _resultsFilterColOptions(f.col) + '</select>' +
+      '<select style="font-size:11px; padding:2px 4px; border:1px solid #cbd5e1; border-radius:4px; min-width:80px;" onchange="updateResultsFilterCondition(' + idx + ',\'op\',this.value)">' + _resultsFilterOpOptions(f.op, col.type) + '</select>' +
+      '<input type="' + (col.type === 'number' ? 'number' : 'text') + '" style="font-size:11px; padding:2px 6px; border:1px solid #cbd5e1; border-radius:4px; min-width:100px; max-width:160px;" value="' + (f.val || '') + '" placeholder="value" oninput="updateResultsFilterCondition(' + idx + ',\'val\',this.value)">' +
+      '<button class="btn btn-outline" style="font-size:11px; padding:2px 6px; color:#ef4444; border-color:#fca5a5;" onclick="removeResultsFilterCondition(' + idx + ')">✕</button>' +
+    '</div>';
+  }).join('');
+}
+
+function addResultsFilterCondition() {
+  window.resultsAdvancedFilters = window.resultsAdvancedFilters || [];
+  window.resultsAdvancedFilters.push({ col: 'ph', op: '>', val: '' });
+  _renderResultsFilterConditionRows();
+}
+
+function removeResultsFilterCondition(idx) {
+  if (window.resultsAdvancedFilters) window.resultsAdvancedFilters.splice(idx, 1);
+  _renderResultsFilterConditionRows();
+}
+
+function updateResultsFilterCondition(idx, field, value) {
+  if (!window.resultsAdvancedFilters || !window.resultsAdvancedFilters[idx]) return;
+  window.resultsAdvancedFilters[idx][field] = value;
+  // If column type changed, reset the operator to the first valid one
+  if (field === 'col') {
+    const col = (window._resultsFilterCols || []).find(function(c) { return c.k === value; }) || { type: 'text' };
+    window.resultsAdvancedFilters[idx].op = (col.type === 'number') ? '>' : 'contains';
+    _renderResultsFilterConditionRows();
+  }
+}
+
+function applyResultsAdvancedFilters() {
+  if (window.pageState) window.pageState['results'] = 1;
+  const chip = document.getElementById('results-adv-filter-chip');
+  const activeCount = (window.resultsAdvancedFilters || []).filter(function(f) { return f.val !== ''; }).length;
+  if (chip) chip.style.display = activeCount > 0 ? '' : 'none';
+  if (typeof renderResults === 'function') renderResults();
+}
+
+function clearAllResultsAdvancedFilters() {
+  window.resultsAdvancedFilters = [];
+  _renderResultsFilterConditionRows();
+  const chip = document.getElementById('results-adv-filter-chip');
+  if (chip) chip.style.display = 'none';
+  if (window.pageState) window.pageState['results'] = 1;
+  if (typeof renderResults === 'function') renderResults();
+}
+
+// Get the numeric metric value for a Results row and column key
+function _getResultsColValue(d, colKey, toNumFn) {
+  const toNum = toNumFn || function(v) { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const r = d.raw || {};
+  const addS = function(a, b) { const na = toNum(a), nb = toNum(b); if (na == null && nb == null) return null; return (na ?? 0) + (nb ?? 0); };
+  const subS = function(a, b) { const na = toNum(a), nb = toNum(b); if (na == null || nb == null) return null; return na - nb; };
+  switch (colKey) {
+    case 'status':   return typeof evaluateTestSuccess === 'function' ? evaluateTestSuccess(d) : '';
+    case 'did':      return String(d.did ?? d.Device_ID ?? '');
+    case 'tid':      return String(d.tid ?? d.Test_ID ?? '');
+    case 'clientId': return String(d.clientId ?? d.Client_ID ?? '');
+    case 'farmId':   return String(d.farmId ?? d.Farm_ID ?? '');
+    case 'crop':     return String(d.crop ?? '');
+    case 'time':     return String(d.time ?? d.Test_date ?? '');
+    case 'Place':    return String(d.Place ?? d.place ?? '');
+    case 'State':    return String(d.State ?? d.state ?? '');
+    case 'GPS':      return String(d.GPS ?? d.gps ?? '');
+    case 'ph':       return toNum(typeof calcMetric === 'function' ? calcMetric(r, 'ph') : null);
+    case 'ec':       return toNum(typeof calcMetric === 'function' ? calcMetric(r, 'ec') : null);
+    case 'oc':       return toNum(typeof getSTV === 'function' ? getSTV(r, 'oc') : null);
+    case 'n':        return toNum(typeof getSTV === 'function' ? addS(getSTV(r, 'ammonium'), getSTV(r, 'nitrate')) : null);
+    case 'p':        return toNum(typeof getSTV === 'function' ? getSTV(r, 'phosphorus') : null);
+    case 'k':        return toNum(typeof getSTV === 'function' ? getSTV(r, 'potassium') : null);
+    case 's':        return toNum(typeof getSTV === 'function' ? getSTV(r, 'sulphur') : null);
+    case 'zn':       return toNum(typeof getSTV === 'function' ? subS(getSTV(r, 'zinccopper'), getSTV(r, 'copper')) : null);
+    case 'cu':       return toNum(typeof getSTV === 'function' ? getSTV(r, 'copper') : null);
+    case 'fe':       return toNum(typeof getSTV === 'function' ? getSTV(r, 'iron') : null);
+    case 'mn':       return toNum(typeof getSTV === 'function' ? getSTV(r, 'manganese') : null);
+    case 'b':        return toNum(typeof getSTV === 'function' ? getSTV(r, 'boron') : null);
+    default:         return '';
+  }
+}
+
+// Test a single row against a single filter condition; returns true if row PASSES the condition
+function _testResultsRowCondition(d, condition) {
+  if (!condition || condition.val === '' || condition.val == null) return true; // empty value = no filter
+  const col = (window._resultsFilterCols || []).find(function(c) { return c.k === condition.col; }) || { type: 'text' };
+  const raw = _getResultsColValue(d, condition.col);
+  const condVal = condition.val;
+  if (col.type === 'number') {
+    const nRaw = Number(raw);
+    const nCond = Number(condVal);
+    if (!Number.isFinite(nRaw) || !Number.isFinite(nCond)) return true; // no data = skip filter
+    switch (condition.op) {
+      case '=':   return nRaw === nCond;
+      case '!=':  return nRaw !== nCond;
+      case '<':   return nRaw < nCond;
+      case '<=':  return nRaw <= nCond;
+      case '>':   return nRaw > nCond;
+      case '>=':  return nRaw >= nCond;
+      default:    return true;
+    }
+  } else {
+    const sRaw  = String(raw ?? '').toLowerCase();
+    const sCond = String(condVal).toLowerCase();
+    switch (condition.op) {
+      case 'contains':  return sRaw.includes(sCond);
+      case '!contains': return !sRaw.includes(sCond);
+      case '=':         return sRaw === sCond;
+      case '!=':        return sRaw !== sCond;
+      case 'starts':    return sRaw.startsWith(sCond);
+      default:          return true;
+    }
+  }
 }
 
 // ===== Results Enhancement 16: Trend sparklines =====
@@ -20482,6 +20697,17 @@ function renderResults() {
 
   // Enhancement 14: render chip filter UI after filtering is applied to original rgbData
   if (typeof renderResultsFilterChips === 'function') renderResultsFilterChips(window.rgbData || rgbData || []);
+
+  // Enhancement: Advanced Column Filters (AND logic - all conditions must pass)
+  const advFilters = (window.resultsAdvancedFilters || []).filter(function(f) { return f.val !== '' && f.val != null; });
+  if (advFilters.length > 0) {
+    filtered = filtered.filter(function(d) {
+      if (typeof ensureRowRaw === 'function') ensureRowRaw(d);
+      return advFilters.every(function(cond) {
+        return typeof _testResultsRowCondition === 'function' ? _testResultsRowCondition(d, cond) : true;
+      });
+    });
+  }
 
   // Sort
   const ss = window.resultsSortState;
