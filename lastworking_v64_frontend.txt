@@ -2843,6 +2843,51 @@
     .rgb-sparkline-bar  { rx: 1; }
 
     /* ===== Feature 13: CSV Import Preview Modal ===== */
+    /* ===== Why FAIL Modal ===== */
+    #why-fail-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10100;
+      background: rgba(0,0,0,0.48);
+      align-items: center;
+      justify-content: center;
+    }
+    #why-fail-modal.open { display: flex; }
+    #why-fail-modal-box {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px 28px;
+      width: 900px;
+      max-width: 97vw;
+      max-height: 88vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.22);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #why-fail-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    #why-fail-modal-header h3 { margin: 0; font-size: 16px; color: #1e293b; }
+    #why-fail-modal-close {
+      background: none; border: none; cursor: pointer; font-size: 20px;
+      color: #64748b; line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    #why-fail-modal-close:hover { background: #f1f5f9; color: #1e293b; }
+    #why-fail-modal-meta { font-size: 12px; color: #475569; display: flex; flex-wrap: wrap; gap: 8px; }
+    #why-fail-modal-meta span { background: #f1f5f9; padding: 2px 8px; border-radius: 4px; }
+    #why-fail-modal-subtitle { font-size: 11px; color: #92400e; background: #fef3c7; padding: 5px 10px; border-radius: 5px; border-left: 3px solid #f59e0b; }
+    #why-fail-modal-table-wrap { overflow-x: auto; }
+    #why-fail-modal-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    #why-fail-modal-table th { background: #fef2f2; color: #991b1b; padding: 6px 10px; text-align: left; font-weight: 600; border-bottom: 2px solid #fecaca; white-space: nowrap; }
+    #why-fail-modal-table td { padding: 5px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    #why-fail-modal-table tr.why-fail-pass td { background: #f0fdf4; color: #166534; }
+    #why-fail-modal-table tr.why-fail-fail td { background: #fff1f2; color: #9f1239; }
+    #why-fail-modal-table .why-fail-badge-pass { display:inline-block; padding:1px 8px; border-radius:9px; background:#dcfce7; color:#166534; font-weight:600; font-size:11px; }
+    #why-fail-modal-table .why-fail-badge-fail { display:inline-block; padding:1px 8px; border-radius:9px; background:#fee2e2; color:#991b1b; font-weight:600; font-size:11px; }
+    #why-fail-modal-empty { font-size:13px; color:#64748b; padding:10px 0; text-align:center; }
+    #why-fail-modal-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+
     #csv-import-preview-modal {
       display: none;
       position: fixed;
@@ -15477,55 +15522,104 @@ if (document.readyState === 'loading') {
 
 // ===== Enhancement C: Per-row "Why Test QC FAIL" inline explanation =====
 function toggleResultsWhyFail(btn, row) {
-  const tr   = btn.closest('tr');
-  if (!tr) return;
-  const next = tr.nextSibling;
-  if (next && next.dataset && next.dataset.whyFail === '1') {
-    next.remove();
-    btn.textContent = 'ⓘ';
-    return;
-  }
-  btn.textContent = '▲';
   if (!row || !row.raw) return;
   if (typeof ensureRowRaw === 'function') ensureRowRaw(row);
-  const failRows = [];
-  (dbCriteria || []).forEach(rule => {
-    const ruleP   = (rule.p || '').toLowerCase().trim();
-    const rawObj  = row.raw[ruleP] || row.raw[rule.p];
-    if (!rawObj) return;
-    const val  = parseFloat(calcMetric(row.raw, rule.p)) || 0;
+
+  // Build modal metadata
+  const did    = escapeHtml(row.did   || row.Device_ID || row.d || '-');
+  const tid    = escapeHtml(row.tid   || row.Test_ID   || row.t || '-');
+  const crop   = escapeHtml(row.crop  || row.Crop      || row.c || '-');
+  const client = escapeHtml(row.clientId || row.Client_ID || row.client || '-');
+
+  const metaEl = document.getElementById('why-fail-modal-meta');
+  if (metaEl) {
+    metaEl.innerHTML =
+      `<span>📟 Device: <b>${did}</b></span>` +
+      `<span>🧪 Test: <b>${tid}</b></span>` +
+      `<span>🌱 Crop: <b>${crop}</b></span>` +
+      `<span>👤 Client: <b>${client}</b></span>`;
+  }
+
+  // Build rows for ALL criteria that apply to this row's spectro model
+  const spectro = (row.Spectro_ID || row.spectro || row.s || '').toLowerCase().trim();
+  const allCriteria = (dbCriteria || []).filter(rule => {
+    const ruleS = (rule.s || '').toLowerCase().trim();
+    return !ruleS || ruleS === spectro;
+  });
+
+  const rowsHtml = [];
+  allCriteria.forEach(rule => {
+    const ruleP      = (rule.p || '').toLowerCase().trim();
+    const rawObj     = row.raw[ruleP] || row.raw[rule.p] || null;
+    const val        = rawObj != null ? (parseFloat(calcMetric(row.raw, rule.p)) || 0) : null;
     const blankEntry = (blankData || []).find(b => (b.p || '').toLowerCase().trim() === ruleP);
     const blank      = blankEntry ? (blankEntry.val || 0) : 0;
-    const finalVal   = val - blank;
+    const finalVal   = val != null ? (val - blank) : null;
+    const paramName  = escapeHtml((typeof cols !== 'undefined' ? cols.find(c => c.k === ruleP || c.k === rule.p) : null)?.n ?? rule.p);
+    const metric     = escapeHtml(rule.metric || rule.m || 'Abs');
+    const lLim       = rule.l != null ? rule.l : '-';
+    const uLim       = rule.u != null ? rule.u : '-';
+    const rel        = escapeHtml(rule.rel || '-');
+    const reason     = escapeHtml(rule.reason || rule.Reason || '-');
+    const action     = escapeHtml(rule.action || rule.Action || '-');
+
     let fail = false;
-    let msg  = '';
-    if (rule.rel === 'between') {
-      if (finalVal < rule.l || finalVal > rule.u) {
-        fail = true;
-        msg = finalVal < rule.l
-          ? `Below MIN ${rule.l} by ${(rule.l - finalVal).toFixed(4)}`
-          : `Above MAX ${rule.u} by ${(finalVal - rule.u).toFixed(4)}`;
-      }
-    } else if (rule.rel === '<' && finalVal < rule.u) {
-      fail = true; msg = `${finalVal.toFixed(4)} < ${rule.u}`;
-    } else if (rule.rel === '>' && finalVal > rule.l) {
-      fail = true; msg = `${finalVal.toFixed(4)} > ${rule.l}`;
-    } else if (rule.rel === '=' && finalVal == rule.l) {
-      fail = true; msg = `${finalVal.toFixed(4)} = ${rule.l}`;
+    let statusNote = '';
+    if (finalVal != null) {
+      if (rule.rel === 'between') {
+        if (finalVal < rule.l || finalVal > rule.u) {
+          fail = true;
+          statusNote = finalVal < rule.l
+            ? `Below L (${(rule.l - finalVal).toFixed(4)} under)`
+            : `Above U (${(finalVal - rule.u).toFixed(4)} over)`;
+        }
+      } else if (rule.rel === '<' && finalVal < rule.u)  { fail = true; statusNote = `${finalVal.toFixed(4)} < ${rule.u}`; }
+      else if (rule.rel === '>' && finalVal > rule.l)    { fail = true; statusNote = `${finalVal.toFixed(4)} > ${rule.l}`; }
+      else if (rule.rel === '=' && finalVal == rule.l)   { fail = true; statusNote = `${finalVal.toFixed(4)} = ${rule.l}`; }
     }
-    if (fail) {
-      const paramName = cols.find(c => c.k === rule.p)?.n ?? rule.p;
-      failRows.push(`<b>${paramName}</b>: raw=${val.toFixed(4)}, blank=${blank}, corrected=${finalVal.toFixed(4)} → ${msg}`);
-    }
+
+    const rowClass   = fail ? 'why-fail-fail' : 'why-fail-pass';
+    const badgeHtml  = fail
+      ? `<span class="why-fail-badge-fail">FAIL</span> <small>${escapeHtml(statusNote)}</small>`
+      : `<span class="why-fail-badge-pass">PASS</span>`;
+    const valCell    = val      != null ? val.toFixed(4)      : '<em>no data</em>';
+    const corrCell   = finalVal != null ? finalVal.toFixed(4) : '<em>no data</em>';
+    const blankCell  = blank != null ? Number(blank).toFixed(4) : '0';
+
+    rowsHtml.push(`<tr class="${rowClass}">
+      <td><b>${paramName}</b></td>
+      <td>${metric}</td>
+      <td>${valCell}</td>
+      <td>${blankCell}</td>
+      <td>${corrCell}</td>
+      <td>${lLim}</td>
+      <td>${rel}</td>
+      <td>${uLim}</td>
+      <td>${reason}</td>
+      <td>${action}</td>
+      <td>${badgeHtml}</td>
+    </tr>`);
   });
-  const detailRow = document.createElement('tr');
-  detailRow.dataset.whyFail = '1';
-  detailRow.style.background = '#fff7ed';
-  const colspan = tr.querySelectorAll('td').length;
-  detailRow.innerHTML = `<td colspan="${colspan}" style="font-size:11px; padding:6px 14px; color:#92400e; border-top:1px solid #fed7aa;">
-    🔍 <b>Why FAIL</b> <span style="color:#78350f">(Test Failure Criteria — all values in Abs/Val space, not STV concentrations):</span> ${failRows.length ? failRows.join(' &nbsp;|&nbsp; ') : 'No matching FAIL rules found — check Test Failure Criteria table.'}
-  </td>`;
-  tr.parentNode.insertBefore(detailRow, tr.nextSibling);
+
+  const tbody = document.getElementById('why-fail-modal-tbody');
+  const emptyEl = document.getElementById('why-fail-modal-empty');
+  if (tbody) {
+    if (rowsHtml.length) {
+      tbody.innerHTML = rowsHtml.join('');
+      if (emptyEl) emptyEl.style.display = 'none';
+    } else {
+      tbody.innerHTML = '';
+      if (emptyEl) { emptyEl.style.display = ''; emptyEl.textContent = 'No Test Failure Criteria found for this row. Check the Test Failure Criteria table in the Database module.'; }
+    }
+  }
+
+  const modal = document.getElementById('why-fail-modal');
+  if (modal) modal.classList.add('open');
+}
+
+function closeWhyFailModal() {
+  const modal = document.getElementById('why-fail-modal');
+  if (modal) modal.classList.remove('open');
 }
 
 // ===== Enhancement F: getSTV equation traceability for tooltip =====
@@ -38024,6 +38118,44 @@ function _dbSortDefaultFirst_(arr) {
       <div id="csv-import-preview-actions">
         <button class="btn btn-outline" onclick="closeCsvImportPreview()">Cancel</button>
         <button class="btn btn-teal" id="csv-import-confirm-btn" onclick="confirmCsvImport()">Import All Rows</button>
+      </div>
+    </div>
+  </div>
+  <!-- Why FAIL Modal -->
+  <div id="why-fail-modal" role="dialog" aria-modal="true" aria-labelledby="why-fail-modal-title" onclick="if(event.target===this)closeWhyFailModal()">
+    <div id="why-fail-modal-box">
+      <div id="why-fail-modal-header">
+        <h3 id="why-fail-modal-title">🔍 Test QC — Why FAIL?</h3>
+        <button id="why-fail-modal-close" onclick="closeWhyFailModal()" title="Close">✕</button>
+      </div>
+      <div id="why-fail-modal-meta"></div>
+      <div id="why-fail-modal-subtitle">
+        ℹ️ All limit values below are in <b>Abs/Val space</b> — they are raw absorbance readings, NOT STV-converted concentrations.
+        Rows highlighted red triggered the FAIL. Rows in green passed all criteria.
+      </div>
+      <div id="why-fail-modal-table-wrap">
+        <table id="why-fail-modal-table">
+          <thead>
+            <tr>
+              <th>Parameter</th>
+              <th>Metric</th>
+              <th>Abs/Val</th>
+              <th>Blank</th>
+              <th>Blank-Corrected</th>
+              <th>L.Limit</th>
+              <th>Relation</th>
+              <th>U.Limit</th>
+              <th>Reason</th>
+              <th>Action</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="why-fail-modal-tbody"></tbody>
+        </table>
+        <div id="why-fail-modal-empty" style="display:none;"></div>
+      </div>
+      <div id="why-fail-modal-actions">
+        <button class="btn btn-outline" onclick="closeWhyFailModal()">Close</button>
       </div>
     </div>
   </div>
