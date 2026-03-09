@@ -15587,9 +15587,10 @@ function toggleResultsWhyFail(btn, row, status) {
     // Use direct Abs/Val (not blank-corrected) for criteria matching
     if (val != null) {
       if (rule.rel === 'between') {
-        if (val >= rule.l && val <= rule.u) {
+        const lo = Math.min(rule.l, rule.u), hi = Math.max(rule.l, rule.u);
+        if (val >= lo && val <= hi) {
           fail = true;
-          statusNote = `Inside FAIL zone [${rule.l} - ${rule.u}]`;
+          statusNote = `Inside FAIL zone [${lo} - ${hi}]`;
         }
       } else if (rule.rel === '<' && val < rule.u)  { fail = true; statusNote = `${val.toFixed(4)} < ${rule.u}`; }
       else if (rule.rel === '>' && val > rule.l)    { fail = true; statusNote = `${val.toFixed(4)} > ${rule.l}`; }
@@ -17736,7 +17737,9 @@ function evaluateTestSuccess(row) {
         // Use direct Abs/Val (not blank-corrected) for criteria matching
         if (rule.rel === 'between') {
             // Each criteria row defines a FAIL zone: value falls INSIDE [l, u] → FAIL
-            return (val >= rule.l && val <= rule.u);
+            // Normalize range: handles inverted L/U in the sheet (e.g. L=-0.15, U=-0.19)
+            const lo = Math.min(rule.l, rule.u), hi = Math.max(rule.l, rule.u);
+            return (val >= lo && val <= hi);
         } else if (rule.rel === '<') {
             return (val < rule.u);
         } else if (rule.rel === '>') {
@@ -21446,7 +21449,8 @@ function renderResultsDetails(row) {
         if(rawObj) {
             // Use direct Abs/Val (not blank-corrected) for criteria matching
             if (rule.rel === 'between') {
-                if (val >= rule.l && val <= rule.u) fail = true;
+                const lo = Math.min(rule.l, rule.u), hi = Math.max(rule.l, rule.u);
+                if (val >= lo && val <= hi) fail = true;
             } else if (rule.rel === '<') {
                 if (val < rule.u) fail = true;
             } else if (rule.rel === '>') {
@@ -23390,7 +23394,8 @@ function renderDeviceResultsDetails(row) {
     if (rawObj) {
       // Use direct Abs/Val (not blank-corrected) for criteria matching
       if (rule.rel === 'between') {
-        if (val >= rule.l && val <= rule.u) fail = true;
+        const lo = Math.min(rule.l, rule.u), hi = Math.max(rule.l, rule.u);
+        if (val >= lo && val <= hi) fail = true;
       } else if (rule.rel === '<') {
         if (val < rule.u) fail = true;
       } else if (rule.rel === '>') {
