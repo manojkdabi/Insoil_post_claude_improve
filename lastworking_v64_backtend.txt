@@ -219,6 +219,16 @@ function getDataByHeaders(ss, sheetName, headers) {
 // Must ALWAYS return an object (never null)
 // ============================================================================
 
+/**
+ * clearInitialDataCache — evicts the initialData:v1 ScriptCache entry.
+ * Called by the "Reload DB" button in the Results/Database toolbar so
+ * the very next getInitialData() call rebuilds from live sheets.
+ */
+function clearInitialDataCache() {
+  CacheService.getScriptCache().remove('initialData:v1');
+  return { ok: true };
+}
+
 function getInitialData() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'initialData:v1';

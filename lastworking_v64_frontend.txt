@@ -1458,6 +1458,15 @@
       font-size: 0.75rem;
     }
 
+    .status-unknown {
+      color: #92400e;
+      font-weight: 700;
+      background-color: rgba(245, 158, 11, 0.15);
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+    }
+
     .val-red {
       color: var(--danger);
       font-weight: 700;
@@ -8150,6 +8159,12 @@
             <button class="btn btn-outline" onclick="toggleResultsSparklines()" id="btn-results-sparklines" title="Toggle trend sparklines per row (last 10 readings for same device)">📊 Sparklines</button>
             <button class="btn btn-outline" onclick="toggleResultsAdvancedFilterPanel()" id="btn-results-adv-filter" title="Advanced column-level filter">⚙ Filter</button>
             <span id="results-adv-filter-chip" style="display:none; font-size:11px; background:#fef3c7; border:1px solid #f59e0b; border-radius:12px; padding:2px 8px; color:#92400e; cursor:pointer;" onclick="clearAllResultsAdvancedFilters()" title="Click to clear all filters">🔍 Filtered ✕</span>
+            <!-- Enhancement B: Reload DB button — clears initialData:v1 cache and re-fetches -->
+            <button class="btn btn-outline" id="btn-results-reload-db" onclick="reloadResultsDbTables()" title="Clear server-side DB cache and reload Criteria / STV / Blanks tables" style="font-size:11px; padding:3px 8px;">🔄 Reload DB</button>
+            <!-- Enhancement E: Blank-corrected vs raw toggle -->
+            <button class="btn btn-outline" id="btn-results-show-raw" onclick="toggleResultsRawCols()" title="Toggle raw Abs and Abs-Blank columns for pH and EC" style="font-size:11px; padding:3px 8px;">Abs/Raw</button>
+            <!-- Enhancement A: DB Health badge — shows row counts for Criteria / Blanks / STV -->
+            <span id="results-db-health-badge" style="font-size:11px; border-radius:12px; padding:2px 9px; font-weight:600; cursor:default;" title="DB table health: row counts for Criteria, Blanks, and STV"></span>
             <span id="stv-version-tag" style="font-size:0.8rem; color:#555; margin-left:8px;"></span>
           </div>
           <div id="results-col-vis-panel" style="display:none; flex-wrap:wrap; gap:6px; padding:6px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; margin-top:4px; max-width:700px;"></div>
@@ -8242,6 +8257,9 @@
                   <th class="results-th-sortable" onclick="sortResultsTable('mn')" title="Sort by Manganese">Manganese <br><small>(mg/kg)</small><span id="results-si-mn"></span></th>
                   <th class="results-th-sortable" onclick="sortResultsTable('b')" title="Sort by Boron">Boron <br><small>(mg/kg)</small><span id="results-si-b"></span></th>
                   <th id="results-th-sparkline" style="display:none" title="Trend: last 10 pH readings for same device">Trend (pH)</th>
+                  <!-- Enhancement E: raw absorbance columns, hidden until toggled -->
+                  <th id="results-th-ph-raw" style="display:none" title="Raw pH absorbance (before blank correction)">pH Abs<br><small>(raw)</small></th>
+                  <th id="results-th-ec-raw" style="display:none" title="Raw EC absorbance (before blank correction)">EC Abs<br><small>(raw)</small></th>
                 </tr>
               </thead>
               <tbody id="body-results"></tbody>
@@ -14313,6 +14331,8 @@ let rgbData        = [];
 let qcData         = [];
 let selectedRowId  = null;
 let isHeavyDataLoaded = false;
+// Issue 10 fix: track when DB tables were last loaded for stale-data warning (Enhancement G)
+window.__dbTablesLoadedAt = 0;
 
 // --- PAGINATION STATE ---
 // Devices Module Pagination
@@ -14536,7 +14556,8 @@ function normalizeCriteriaRows(rows) {
 function normalizeStvRows(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map(r => ({
-      p:   pickField_(r, ['parameter', 'param', 'p'], ''),
+      // Issue 11 fix: normalize p to lowercase so getSTV case-insensitive match works
+      p:   (pickField_(r, ['parameter', 'param', 'p'], '') || '').toLowerCase().trim(),
       // Weakness 5 fix: store a/b as numbers to prevent silent zero-multiplier when blank
       a:   parseFloat(pickField_(r, ['a'], '') || '0') || 0,
       b:   parseFloat(pickField_(r, ['b'], '') || '0') || 0,
@@ -14653,6 +14674,11 @@ function loadInitialData() {
       stvData        = normalizeStvRows(rawStv);
       qcCriteriaData = normalizeQcCriteriaRows(rawQcCriteria);
       blankData      = normalizeBlankRows(rawBlanks);
+
+      // Issue 10 fix: stamp load time for stale-data warning (Enhancement G)
+      window.__dbTablesLoadedAt = Date.now();
+      // Enhancement A: update DB Health badge after successful load
+      if (typeof updateResultsDbHealthBadge === 'function') updateResultsDbHealthBadge();
 
       deviceRegistry = Array.isArray(res.registry)
         ? res.registry.map(r => mapRegistryRow(r))
@@ -15376,6 +15402,143 @@ function exportRgbCsv() {
   showToast('CSV exported ✅', 'success');
 }
 
+// ===== Enhancement A: DB Health badge =====
+function updateResultsDbHealthBadge() {
+  const badge = document.getElementById('results-db-health-badge');
+  if (!badge) return;
+  const cCount = (dbCriteria || []).length;
+  const bCount = (blankData   || []).length;
+  const sCount = (stvData     || []).length;
+  const anyEmpty = (cCount === 0 || bCount === 0 || sCount === 0);
+  const icon   = anyEmpty ? '⚠️' : '✅';
+  const color  = anyEmpty ? '#b45309' : '#15803d';
+  const bg     = anyEmpty ? 'rgba(245,158,11,0.12)' : 'rgba(21,128,61,0.1)';
+  const border = anyEmpty ? '1px solid #f59e0b' : '1px solid #86efac';
+  badge.textContent = `${icon} Criteria: ${cCount} · Blanks: ${bCount} · STV: ${sCount}`;
+  badge.style.color      = color;
+  badge.style.background = bg;
+  badge.style.border     = border;
+  badge.style.display    = '';
+  badge.title = anyEmpty
+    ? '⚠️ One or more DB tables are empty — Test QC will show UNKNOWN'
+    : `DB tables loaded: Criteria ${cCount} rules · Blanks ${bCount} · STV ${sCount}`;
+}
+
+// ===== Enhancement B: Reload DB tables button =====
+function reloadResultsDbTables() {
+  const btn = document.getElementById('btn-results-reload-db');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Reloading…'; }
+  google.script.run
+    .withSuccessHandler(() => {
+      // cache cleared — now re-fetch fresh data
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Reload DB'; }
+      // Reset the load timestamp so stale warning resets
+      window.__dbTablesLoadedAt = 0;
+      loadInitialData();
+      showToast('DB tables cache cleared — reloading from sheets…', 'info', 4000);
+    })
+    .withFailureHandler(err => {
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Reload DB'; }
+      showToast('Failed to clear DB cache: ' + (err && err.message ? err.message : String(err)), 'error', 6000);
+    })
+    .clearInitialDataCache();
+}
+
+// ===== Enhancement G: Stale data warning toast =====
+const _STALE_WARNING_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+let _staleDataToastInterval = null;
+function _startStaleDataWatcher() {
+  if (_staleDataToastInterval) clearInterval(_staleDataToastInterval);
+  _staleDataToastInterval = setInterval(() => {
+    if (!window.__dbTablesLoadedAt) return;
+    const ageMs  = Date.now() - window.__dbTablesLoadedAt;
+    const ageMins = Math.round(ageMs / 60000);
+    if (ageMs >= _STALE_WARNING_INTERVAL_MS) {
+      // Show a non-blocking amber banner once per 5-minute cycle
+      const existing = document.getElementById('stale-db-toast');
+      if (!existing) {
+        const el = document.createElement('div');
+        el.id = 'stale-db-toast';
+        el.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:8px 16px;font-size:12px;color:#92400e;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;';
+        el.innerHTML = `⚠️ DB tables loaded ${ageMins} min ago — <b>click Reload to refresh</b> ✕`;
+        el.onclick = () => { el.remove(); reloadResultsDbTables(); };
+        document.body.appendChild(el);
+        setTimeout(() => el && el.remove(), 30000); // auto-dismiss after 30s
+      }
+    }
+  }, 5 * 60 * 1000); // check every 5 minutes
+}
+// Start the stale watcher after page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startStaleDataWatcher);
+} else {
+  _startStaleDataWatcher();
+}
+
+// ===== Enhancement C: Per-row "Why Test QC FAIL" inline explanation =====
+function toggleResultsWhyFail(btn, row) {
+  const tr   = btn.closest('tr');
+  if (!tr) return;
+  const next = tr.nextSibling;
+  if (next && next.dataset && next.dataset.whyFail === '1') {
+    next.remove();
+    btn.textContent = 'ⓘ';
+    return;
+  }
+  btn.textContent = '▲';
+  if (!row || !row.raw) return;
+  if (typeof ensureRowRaw === 'function') ensureRowRaw(row);
+  const failRows = [];
+  (dbCriteria || []).forEach(rule => {
+    const ruleP   = (rule.p || '').toLowerCase().trim();
+    const rawObj  = row.raw[ruleP] || row.raw[rule.p];
+    if (!rawObj) return;
+    const val  = parseFloat(calcMetric(row.raw, rule.p)) || 0;
+    const blankEntry = (blankData || []).find(b => (b.p || '').toLowerCase().trim() === ruleP);
+    const blank      = blankEntry ? (blankEntry.val || 0) : 0;
+    const finalVal   = val - blank;
+    let fail = false;
+    let msg  = '';
+    if (rule.rel === 'between') {
+      if (finalVal < rule.l || finalVal > rule.u) {
+        fail = true;
+        msg = finalVal < rule.l
+          ? `Below MIN ${rule.l} by ${(rule.l - finalVal).toFixed(4)}`
+          : `Above MAX ${rule.u} by ${(finalVal - rule.u).toFixed(4)}`;
+      }
+    } else if (rule.rel === '<' && finalVal < rule.u) {
+      fail = true; msg = `${finalVal.toFixed(4)} < ${rule.u}`;
+    } else if (rule.rel === '>' && finalVal > rule.l) {
+      fail = true; msg = `${finalVal.toFixed(4)} > ${rule.l}`;
+    } else if (rule.rel === '=' && finalVal == rule.l) {
+      fail = true; msg = `${finalVal.toFixed(4)} = ${rule.l}`;
+    }
+    if (fail) {
+      const paramName = cols.find(c => c.k === rule.p)?.n ?? rule.p;
+      failRows.push(`<b>${paramName}</b>: raw=${val.toFixed(4)}, blank=${blank}, corrected=${finalVal.toFixed(4)} → ${msg}`);
+    }
+  });
+  const detailRow = document.createElement('tr');
+  detailRow.dataset.whyFail = '1';
+  detailRow.style.background = '#fff7ed';
+  const colspan = tr.querySelectorAll('td').length;
+  detailRow.innerHTML = `<td colspan="${colspan}" style="font-size:11px; padding:6px 14px; color:#92400e; border-top:1px solid #fed7aa;">
+    🔍 <b>Why FAIL:</b> ${failRows.length ? failRows.join(' &nbsp;|&nbsp; ') : 'No matching FAIL rules found — check Criteria table.'}
+  </td>`;
+  tr.parentNode.insertBefore(detailRow, tr.nextSibling);
+}
+
+// ===== Enhancement F: getSTV equation traceability for tooltip =====
+function getSTVEquationTooltip(key, rawVal) {
+  const keyNorm = (key || '').toLowerCase().trim();
+  const stv = stvData.find(s => s.p === keyNorm);
+  if (!stv || (!stv.a && !stv.b)) return null;
+  const a = Number(stv.a).toFixed(4);
+  const b = Number(stv.b).toFixed(4);
+  const r = (rawVal != null) ? Number(rawVal).toFixed(4) : '?';
+  return `${keyNorm} = ${a} × ${r} + (${b})`;
+}
+
 // ===== Results W8: Rows per page =====
 function setResultsRowsPerPage(n) {
   window.resultsRowsPerPage = parseInt(n, 10) || 50;
@@ -15797,6 +15960,14 @@ function toggleResultsSparklines() {
   window.resultsSparklines = !window.resultsSparklines;
   const btn = document.getElementById('btn-results-sparklines');
   if (btn) btn.style.fontWeight = window.resultsSparklines ? '700' : '';
+  if (typeof renderResults === 'function') renderResults();
+}
+
+// Enhancement E: toggle raw Abs/Blank columns
+function toggleResultsRawCols() {
+  window.resultsShowRaw = !window.resultsShowRaw;
+  const btn = document.getElementById('btn-results-show-raw');
+  if (btn) btn.style.fontWeight = window.resultsShowRaw ? '700' : '';
   if (typeof renderResults === 'function') renderResults();
 }
 
@@ -17342,12 +17513,14 @@ function getSTV(rowOrRaw, key) {
   const metricVal = calcMetric(raw, key);
   if (metricVal == null) return null;
 
-  const stv = stvData.find(s => s.p === key);
+  // Issue 11 fix: normalize key to lowercase to match normalizeStvRows p normalization
+  const keyNorm = (key || '').toLowerCase().trim();
+  const stv = stvData.find(s => s.p === keyNorm);
   if (!stv) return metricVal;
 
-  // Keep your existing scaling logic
-  const a = Number(stv.a);
-  const b = Number(stv.b);
+  // stv.a and stv.b are already numbers from normalizeStvRows (Weakness 5 fix)
+  const a = stv.a;
+  const b = stv.b;
 
   if (Number.isFinite(a) && Number.isFinite(b)) {
     return (metricVal * a) + b;
@@ -17404,6 +17577,8 @@ function getEffectiveQCStatusForDevice(deviceId, testId, autoStatus) {
 // TEST SUCCESS
 function evaluateTestSuccess(row) {
     if (!row || !row.raw) return 'PASS';
+    // Issue 10 fix: if dbCriteria is empty (e.g. failed/timed-out load), return UNKNOWN not PASS
+    if (!dbCriteria || dbCriteria.length === 0) return 'UNKNOWN';
     // Weakness 8 fix: resolve the row's spectro model once; used to skip inapplicable rules
     const rowSpectro = String(row.Spectro_ID ?? row.spectro ?? row.s ?? '').trim();
     // Weakness 9 fix: use Array.some() for short-circuit evaluation — stops at first FAIL
@@ -20714,6 +20889,12 @@ function renderResults() {
   const sparklineThEl = document.getElementById('results-th-sparkline');
   if (sparklineThEl) sparklineThEl.style.display = window.resultsSparklines ? '' : 'none';
 
+  // Enhancement E: show/hide raw abs column headers
+  const phRawTh = document.getElementById('results-th-ph-raw');
+  const ecRawTh = document.getElementById('results-th-ec-raw');
+  if (phRawTh) phRawTh.style.display = window.resultsShowRaw ? '' : 'none';
+  if (ecRawTh) ecRawTh.style.display = window.resultsShowRaw ? '' : 'none';
+
   // 3. Slice Data
   const pageData = filtered.slice(startIdx, endIdx);
 
@@ -20810,7 +20991,7 @@ function renderResults() {
     const globalIdx = startIdx + idx + 1;
     if (typeof ensureRowRaw === 'function') ensureRowRaw(d);
     const testStatus = evaluateTestSuccess(d);
-    const tClass = testStatus === 'PASS' ? 'status-pass' : 'status-fail';
+    const tClass = testStatus === 'PASS' ? 'status-pass' : testStatus === 'UNKNOWN' ? 'status-unknown' : 'status-fail';
 
     const r = d.raw || {};
 
@@ -20849,13 +21030,30 @@ function renderResults() {
     const ocTip = healthTip('oc', ocN); const nTip  = healthTip('n', nN);
     const pTip  = healthTip('p', pN);  const kTip  = healthTip('k', kN);
 
-    tr.innerHTML = `<td>${globalIdx}</td><td class="${tClass}">${testStatus}</td>
+    // Enhancement F: STV equation traceability tooltips for converted metric cells
+    const phEqTip = getSTVEquationTooltip('ph',  calcMetric(r,'ph'));
+    const ecEqTip = getSTVEquationTooltip('ec',  calcMetric(r,'ec'));
+    const ocEqTip = getSTVEquationTooltip('oc',  calcMetric(r,'oc'));
+    const nEqTipA = getSTVEquationTooltip('ammonium',  calcMetric(r,'ammonium'));
+    const pEqTip  = getSTVEquationTooltip('phosphorus', calcMetric(r,'phosphorus'));
+    const kEqTip  = getSTVEquationTooltip('potassium',  calcMetric(r,'potassium'));
+    const buildTip = (htip, eqtip) => {
+      const parts = [htip, eqtip].filter(Boolean);
+      return parts.length ? parts.join(' | ') : null;
+    };
+
+    // Enhancement C: "Why FAIL" ⓘ button for FAIL rows — stored as data-idx for row lookup
+    const whyFailBtn = testStatus === 'FAIL'
+      ? `<button title="Why FAIL?" onclick="toggleResultsWhyFail(this, window.currentFilteredResults?.[${startIdx + idx}])" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;color:#dc2626;">ⓘ</button>`
+      : '';
+
+    tr.innerHTML = `<td>${globalIdx}</td><td class="${tClass}">${testStatus}${whyFailBtn}</td>
       <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${eTid}', '${eDid}', '${eCrop}', '${eTime}')">Download report</button></td>
       <td><button class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 6px; white-space:nowrap;" onclick="viewResultsQcHistogram(event,'${eDid}','${eTid}')" title="Jump to QC Histogram for Device ${eDid} / Test ${eTid}">📊 QC →</button></td>
       <td${cv('clientId')}>${escapeHtml(d.clientId ?? d.Client_ID ?? '') || '-'}</td><td${cv('farmId')}>${escapeHtml(d.farmId ?? d.Farm_ID ?? '') || '-'}</td><td${cv('crop')}>${eCrop || '-'}</td><td>${eTid}</td><td>${eDid}</td><td class="col-date">${eTime}</td>
       <td${cv('Place')}>${escapeHtml(d.Place ?? d.place ?? '') || '-'}</td><td${cv('GPS')}>${escapeHtml(d.GPS ?? d.gps ?? '') || '-'}</td><td${cv('State')}>${escapeHtml(d.State ?? d.state ?? '') || '-'}</td>
-      <td class="${paramSt('ph',phN)}"${phTip ? ` title="${phTip}"` : ''}>${ph}</td><td class="${paramSt('ec',ecN)}"${ecTip ? ` title="${ecTip}"` : ''}>${ec}</td><td class="${paramSt('oc',ocN)}"${ocTip ? ` title="${ocTip}"` : ''}>${oc}</td><td class="${paramSt('n',nN)}"${nTip ? ` title="${nTip}"` : ''}>${n}</td>
-      <td class="${paramSt('p',pN)}"${pTip ? ` title="${pTip}"` : ''}>${p}</td><td class="${paramSt('k',kN)}"${kTip ? ` title="${kTip}"` : ''}>${k}</td><td class="${paramSt('s',sN)}">${s}</td><td class="${paramSt('zn',znN)}">${zn}</td>
+      <td class="${paramSt('ph',phN)}"${buildTip(phTip,phEqTip) ? ` title="${buildTip(phTip,phEqTip)}"` : ''}>${ph}</td><td class="${paramSt('ec',ecN)}"${buildTip(ecTip,ecEqTip) ? ` title="${buildTip(ecTip,ecEqTip)}"` : ''}>${ec}</td><td class="${paramSt('oc',ocN)}"${buildTip(ocTip,ocEqTip) ? ` title="${buildTip(ocTip,ocEqTip)}"` : ''}>${oc}</td><td class="${paramSt('n',nN)}"${buildTip(nTip,nEqTipA) ? ` title="${buildTip(nTip,nEqTipA)}"` : ''}>${n}</td>
+      <td class="${paramSt('p',pN)}"${buildTip(pTip,pEqTip) ? ` title="${buildTip(pTip,pEqTip)}"` : ''}>${p}</td><td class="${paramSt('k',kN)}"${buildTip(kTip,kEqTip) ? ` title="${buildTip(kTip,kEqTip)}"` : ''}>${k}</td><td class="${paramSt('s',sN)}">${s}</td><td class="${paramSt('zn',znN)}">${zn}</td>
       <td class="${paramSt('cu',cuN)}">${cu}</td><td class="${paramSt('fe',feN)}">${fe}</td><td class="${paramSt('mn',mnN)}">${mn}</td><td class="${paramSt('b',bN)}">${b}</td>`;
 
     // Enhancement 16: append sparkline cell
@@ -20865,6 +21063,22 @@ function renderResults() {
       const sparkSvg = (typeof renderResultsSparkline === 'function') ? renderResultsSparkline(d.did ?? d.Device_ID ?? '', rgbData || [], toNum) : null;
       if (sparkSvg) tdSpark.appendChild(sparkSvg);
       tr.appendChild(tdSpark);
+    }
+
+    // Enhancement E: append raw absorbance cells (hidden when toggle is off via CSS display on th)
+    if (window.resultsShowRaw) {
+      const phRaw = calcMetric(r, 'ph');
+      const ecRaw = calcMetric(r, 'ec');
+      const tdPhRaw = document.createElement('td');
+      tdPhRaw.style.cssText = 'color:#6b7280; font-size:11px;';
+      tdPhRaw.textContent = phRaw != null ? Number(phRaw).toFixed(4) : '';
+      tdPhRaw.title = 'Raw pH absorbance (before blank correction)';
+      const tdEcRaw = document.createElement('td');
+      tdEcRaw.style.cssText = 'color:#6b7280; font-size:11px;';
+      tdEcRaw.textContent = ecRaw != null ? Number(ecRaw).toFixed(4) : '';
+      tdEcRaw.title = 'Raw EC absorbance (before blank correction)';
+      tr.appendChild(tdPhRaw);
+      tr.appendChild(tdEcRaw);
     }
 
     tbody.appendChild(tr);
@@ -21062,7 +21276,16 @@ function renderResultsDetails(row) {
 
     if (typeof ensureRowRaw === 'function') ensureRowRaw(row);
 
-    const rowsHtml = [];
+    // Enhancement D: show DB context header — blank values + STV equations used for this row
+    const appliedBlanks = (blankData || []).map(b => `${b.p}=${b.val}`).join(', ');
+    const contextHtml = `<tr style="background:#f0fdf4;">
+      <td colspan="9" style="font-size:11px; padding:4px 10px; color:#15803d;">
+        📋 <b>DB context:</b> Blanks used: [${appliedBlanks || 'none'}] &nbsp;|&nbsp;
+        Criteria rules: ${(dbCriteria||[]).length} &nbsp;|&nbsp; STV equations: ${(stvData||[]).length}
+      </td>
+    </tr>`;
+
+    const rowsHtml = [contextHtml];
     dbCriteria.forEach(rule => {
         const ruleP = (rule.p || '').toLowerCase().trim();
         const rawObj = row.raw?.[ruleP] || row.raw?.[rule.p];
@@ -21091,13 +21314,15 @@ function renderResultsDetails(row) {
         let status      = fail ? "FAIL" : "PASS";
         let statusClass = fail ? "val-red" : "status-pass";
         const paramName = cols.find(c => c.k === rule.p)?.n ?? rule.p;
+        // Enhancement F: show STV equation as tooltip on Val-Blank cell
+        const stvTip = typeof getSTVEquationTooltip === 'function' ? getSTVEquationTooltip(rule.p, val) : null;
 
         rowsHtml.push(`
             <tr>
                 <td>${row.did}</td>
                 <td><b>${paramName}</b></td>
                 <td class="${fail ? 'val-red' : 'text-black'}">${val.toFixed(3)}</td>
-                <td class="text-blue">${finalVal.toFixed(3)}</td>
+                <td class="text-blue"${stvTip ? ` title="${stvTip}"` : ''}>${finalVal.toFixed(3)}</td>
                 <td>${rawObj ? rawObj.c : '-'}</td>
                 <td>${rawObj ? rawObj.t : '-'}</td>
                 <td class="${statusClass}">${status}</td>
@@ -22877,7 +23102,7 @@ function renderDeviceResultsTable(deviceId) {
   rows.forEach((d, idx) => {
     if (typeof ensureRowRaw === 'function') ensureRowRaw(d);
     const testStatus = evaluateTestSuccess(d);
-    const tClass = testStatus === 'PASS' ? 'status-pass' : 'status-fail';
+    const tClass = testStatus === 'PASS' ? 'status-pass' : testStatus === 'UNKNOWN' ? 'status-unknown' : 'status-fail';
     if (testStatus === 'PASS') passCount += 1;
     if (testStatus === 'FAIL') failCount += 1;
 
