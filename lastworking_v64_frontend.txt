@@ -20149,10 +20149,14 @@ function renderResults() {
       return (n != null && n <= 0) ? 'val-red' : '';
     };
 
+    const eTid  = escapeHtml(d.tid  ?? '');
+    const eDid  = escapeHtml(d.did  ?? '');
+    const eCrop = escapeHtml(d.crop ?? '');
+    const eTime = escapeHtml(d.time ?? d.Test_date ?? '');
     tr.innerHTML = `<td>${globalIdx}</td><td class="${tClass}">${testStatus}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${d.tid}', '${d.did}', '${d.crop ?? ''}', '${d.time ?? d.Test_date ?? ''}')">Download report</button></td>
-      <td>${d.clientId || d.Client_ID || '-'}</td><td>${d.farmId || d.Farm_ID || '-'}</td><td>${d.crop || '-'}</td><td>${d.tid}</td><td>${d.did}</td><td class="col-date">${d.time}</td>
-      <td>${d.Place || d.place || '-'}</td><td>${d.GPS || d.gps || '-'}</td><td>${d.State || d.state || '-'}</td>
+      <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${eTid}', '${eDid}', '${eCrop}', '${eTime}')">Download report</button></td>
+      <td>${escapeHtml(d.clientId ?? d.Client_ID ?? '') || '-'}</td><td>${escapeHtml(d.farmId ?? d.Farm_ID ?? '') || '-'}</td><td>${eCrop || '-'}</td><td>${eTid}</td><td>${eDid}</td><td class="col-date">${eTime}</td>
+      <td>${escapeHtml(d.Place ?? d.place ?? '') || '-'}</td><td>${escapeHtml(d.GPS ?? d.gps ?? '') || '-'}</td><td>${escapeHtml(d.State ?? d.state ?? '') || '-'}</td>
       <td class="${st(phN)}">${ph}</td><td class="${st(ecN)}">${ec}</td><td class="${st(ocN)}">${oc}</td><td class="${st(nN)}">${n}</td>
       <td class="${st(pN)}">${p}</td><td class="${st(kN)}">${k}</td><td class="${st(sN)}">${s}</td><td class="${st(znN)}">${zn}</td>
       <td class="${st(cuN)}">${cu}</td><td class="${st(feN)}">${fe}</td><td class="${st(mnN)}">${mn}</td><td class="${st(bN)}">${b}</td>`;
@@ -22211,16 +22215,20 @@ function renderDeviceResultsTable(deviceId) {
       const modeSel = document.getElementById('device-results-lower-mode');
       if (modeSel && modeSel.value === 'rgb') renderDeviceResultsRGB();
     });
+    const eTid2  = escapeHtml(d.tid  ?? '');
+    const eDid2  = escapeHtml(d.did  ?? '');
+    const eCrop2 = escapeHtml(d.crop ?? '');
+    const eTime2 = escapeHtml(d.time ?? d.Test_date ?? '');
     tr.innerHTML = `
       <td>${idx + 1}</td>
       <td class="${tClass}">${testStatus}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${d.tid}', '${d.did}', '${d.crop ?? ''}', '${d.time ?? d.Test_date ?? ''}')">Download report</button></td>
+      <td><button class="btn btn-sm btn-outline" onclick="downloadResultsReport(event, '${eTid2}', '${eDid2}', '${eCrop2}', '${eTime2}')">Download report</button></td>
       <td>${escapeHtml(d.clientId ?? d.Client_ID ?? '')}</td>
       <td>${escapeHtml(d.farmId ?? d.Farm_ID ?? '')}</td>
-      <td>${escapeHtml(d.crop ?? '')}</td>
-      <td>${escapeHtml(d.tid ?? '')}</td>
-      <td>${escapeHtml(d.did ?? '')}</td>
-      <td class="col-date">${escapeHtml(d.time ?? '')}</td>
+      <td>${eCrop2}</td>
+      <td>${eTid2}</td>
+      <td>${eDid2}</td>
+      <td class="col-date">${eTime2}</td>
       <td>${escapeHtml(d.Place ?? d.place ?? '')}</td>
       <td>${escapeHtml(d.GPS ?? d.gps ?? '')}</td>
       <td>${escapeHtml(d.State ?? d.state ?? '')}</td>
