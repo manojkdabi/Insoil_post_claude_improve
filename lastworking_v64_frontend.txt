@@ -14303,83 +14303,6 @@ function numberFromTripletOrNumber(val, bandCode) {
   return null;
 }
 
-/**
- * Calculates a display/export metric for a given parameter key.
- * - For Val columns (pH, EC): returns value/100 (as per your backend recalculation).
- * - For Abs columns: returns 1 - (t/c) using raw[key].t and raw[key].c
- *   (supports numbers OR triplet strings in t/c as fallback).
- *
- * Returns: number OR null
- */
-// ===================== METRIC (GLOBAL) =====================
-// Always install on window so it can be called from anywhere safely.
-window.calcMetric = function (raw, key) {
-  try {
-    if (!raw || !key) return 0;
-
-    // Prefer your existing key→colSpec logic if present
-    const spec = (typeof getColSpecByKey === 'function') ? getColSpecByKey(key) : null;
-    const node = raw[key];
-    if (node == null) return 0;
-
-    // If backend/UI already stored a number directly
-    if (typeof node === 'number') return Number.isFinite(node) ? node : 0;
-
-    // If backend/UI stored numeric as string
-    if (typeof node === 'string' && !node.includes(',')) {
-      const n = Number(node.trim());
-      return Number.isFinite(n) ? n : 0;
-    }
-
-    // Determine metric type (Abs/Val)
-    const metricType = spec && spec.t ? String(spec.t).toUpperCase() : null;
-    const band = spec ? spec.b : null;
-
-    // Helper: parse triplet or scalar
-    const parse = (x) => (
-      (typeof numberFromTripletOrNumber === 'function')
-        ? numberFromTripletOrNumber(x, band)
-        : Number(x)
-    );
-
-    // VAL columns: shown as t/100 in your UI convention
-    if (metricType === 'VAL') {
-      // accept any of these shapes
-      const base = (node && typeof node === 'object')
-        ? (node.v ?? node.val ?? node.value ?? node.t)
-        : node;
-
-      const v = parse(base);
-      return Number.isFinite(v) ? (v / 100) : 0;
-    }
-
-    // ABS columns: 1 - t/c (preferred), else accept a stored abs-like value if present
-    if (node && typeof node === 'object') {
-      const t = parse(node.t);
-      const c = parse(node.c);
-
-      if (Number.isFinite(t) && Number.isFinite(c) && c !== 0) {
-        return 1 - (t / c);
-      }
-
-      const abs = parse(node.abs ?? node.Abs ?? node.metric);
-      if (Number.isFinite(abs)) return abs;
-    }
-
-    if (window.DEBUG_METRIC) console.warn('[calcMetric] cannot compute', { key, spec, node });
-    return 0;
-  } catch (e) {
-    if (window.DEBUG_METRIC) console.error('[calcMetric] exception', { key, e });
-    return 0;
-  }
-};
-
-// Legacy global binding for code paths that call calcMetric(...)
-var calcMetric = window.calcMetric;
-
-
-
-
 let dbCriteria = [];
 let stvData        = [];
 let qcCriteriaData = [];
@@ -14613,13 +14536,15 @@ function normalizeCriteriaRows(rows) {
 function normalizeStvRows(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map(r => ({
-      p: pickField_(r, ['parameter', 'param', 'p'], ''),
-      a: pickField_(r, ['a'], ''),
-      b: pickField_(r, ['b'], ''),
-      df1: pickField_(r, ['df1'], ''),
-      df2: pickField_(r, ['df2'], ''),
-      df3: pickField_(r, ['df3'], ''),
-      df4: pickField_(r, ['df4'], '')
+      p:   pickField_(r, ['parameter', 'param', 'p'], ''),
+      // Weakness 5 fix: store a/b as numbers to prevent silent zero-multiplier when blank
+      a:   parseFloat(pickField_(r, ['a'], '') || '0') || 0,
+      b:   parseFloat(pickField_(r, ['b'], '') || '0') || 0,
+      // df1–df4 reserved for future dilution-factor correction; stored as numbers for readiness
+      df1: parseFloat(pickField_(r, ['df1'], '') || '0') || 0,
+      df2: parseFloat(pickField_(r, ['df2'], '') || '0') || 0,
+      df3: parseFloat(pickField_(r, ['df3'], '') || '0') || 0,
+      df4: parseFloat(pickField_(r, ['df4'], '') || '0') || 0
     }))
     .filter(rowHasValues_);
 }
@@ -17479,30 +17404,33 @@ function getEffectiveQCStatusForDevice(deviceId, testId, autoStatus) {
 // TEST SUCCESS
 function evaluateTestSuccess(row) {
     if (!row || !row.raw) return 'PASS';
-    let anyFail = false;
-    dbCriteria.forEach(rule => {
+    // Weakness 8 fix: resolve the row's spectro model once; used to skip inapplicable rules
+    const rowSpectro = String(row.Spectro_ID ?? row.spectro ?? row.s ?? '').trim();
+    // Weakness 9 fix: use Array.some() for short-circuit evaluation — stops at first FAIL
+    const anyFail = dbCriteria.some(rule => {
+        // Weakness 8 fix: if rule.s is non-empty, only apply it to matching spectro model
+        if (rule.s && rowSpectro && rule.s !== rowSpectro) return false;
         // Bug 2 fix: case-insensitive parameter key match across Criteria and Blanks tables
         const ruleP = (rule.p || '').toLowerCase().trim();
         // Try normalized key first, fall back to raw key to handle mixed-case raw objects
         const rawObj = row.raw[ruleP] || row.raw[rule.p];
-        if (!rawObj) return;
+        if (!rawObj) return false;
         let val = parseFloat(calcMetric(row.raw, rule.p));
         // Bug 2 fix: case-insensitive lookup; Bug 1 fix: blankData.val is already parseFloat'd
         const blankEntry = blankData.find(b => (b.p || '').toLowerCase().trim() === ruleP);
         const blank = blankEntry ? (blankEntry.val || 0) : 0;
         const finalVal = val - blank;
-        let fail = false;
         if (rule.rel === 'between') {
             // Bug 4 fix: 'between' = PASS zone; value outside [l, u] → FAIL
-            if (finalVal < rule.l || finalVal > rule.u) fail = true;
+            return (finalVal < rule.l || finalVal > rule.u);
         } else if (rule.rel === '<') {
-            if (finalVal < rule.u) fail = true;
+            return (finalVal < rule.u);
         } else if (rule.rel === '>') {
-            if (finalVal > rule.l) fail = true;
+            return (finalVal > rule.l);
         } else if (rule.rel === '=') {
-            if (finalVal == rule.l) fail = true;
+            return (finalVal == rule.l);
         }
-        if (fail) anyFail = true;
+        return false;
     });
     return anyFail ? 'FAIL' : 'PASS';
 }
