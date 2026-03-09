@@ -14590,16 +14590,27 @@ function rowHasValues_(row) {
 function normalizeCriteriaRows(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map(r => ({
-      s: pickField_(r, ['spectro', 's'], ''),
-      p: pickField_(r, ['parameter', 'param', 'p'], ''),
-      m: pickField_(r, ['metric', 'm'], ''),
-      l: parseFloat(pickField_(r, ['llimit', 'l.limit', 'l_limit', 'l limit', 'lowerlimit'], '')),
+      // Audit fix: normalize s and p to lowercase for consistent case-insensitive matching
+      // (mirrors normalizeStvRows/normalizeBlankRows and evaluateTestSuccess runtime normalization)
+      s:   (pickField_(r, ['spectro', 's'], '') || '').toLowerCase().trim(),
+      p:   (pickField_(r, ['parameter', 'param', 'p'], '') || '').toLowerCase().trim(),
+      m:   pickField_(r, ['metric', 'm'], ''),
+      l:   parseFloat(pickField_(r, ['llimit', 'l.limit', 'l_limit', 'l limit', 'lowerlimit'], '')),
       rel: pickField_(r, ['relation', 'rel', 'operator'], 'between'),
-      u: parseFloat(pickField_(r, ['ulimit', 'u.limit', 'u_limit', 'u limit', 'upperlimit'], '')),
-      re: pickField_(r, ['reason', 're'], ''),
-      ac: pickField_(r, ['action', 'ac'], '')
+      u:   parseFloat(pickField_(r, ['ulimit', 'u.limit', 'u_limit', 'u limit', 'upperlimit'], '')),
+      re:  pickField_(r, ['reason', 're'], ''),
+      ac:  pickField_(r, ['action', 'ac'], '')
     }))
-    .filter(rowHasValues_);
+    // Audit fix: discard rows with NaN limits — they would silently never trigger (between NaN is
+    // always false); surface malformed criteria rather than silently passing every test
+    .filter(r => {
+      if (!rowHasValues_(r)) return false;
+      if (r.rel === 'between') return !Number.isNaN(r.l) && !Number.isNaN(r.u);
+      if (r.rel === '<')       return !Number.isNaN(r.u);
+      if (r.rel === '>')       return !Number.isNaN(r.l);
+      if (r.rel === '=')       return !Number.isNaN(r.l);
+      return true; // unknown relation — keep, evaluate returns false (PASS)
+    });
 }
 
 function normalizeStvRows(rows) {
@@ -21462,21 +21473,24 @@ function renderResultsDetails(row) {
 
         let status      = fail ? "FAIL" : "PASS";
         let statusClass = fail ? "val-red" : "status-pass";
-        const paramName = cols.find(c => c.k === rule.p)?.n ?? rule.p;
+        // Audit fix: use normalized ruleP for cols lookup (cols.k are always lowercase)
+        const paramName = escapeHtml(cols.find(c => c.k === ruleP)?.n ?? rule.p);
         // Enhancement F: show STV equation as tooltip on Val-Blank cell
         const stvTip = typeof getSTVEquationTooltip === 'function' ? getSTVEquationTooltip(rule.p, val) : null;
+        // Audit fix: escape stvTip before injecting into title attribute (prevents attribute injection)
+        const stvTipAttr = stvTip ? ` title="${escapeHtml(String(stvTip)).replace(/"/g, '&quot;')}"` : '';
 
         rowsHtml.push(`
             <tr>
-                <td>${row.did}</td>
+                <td>${escapeHtml(row.did || row.Device_ID || '-')}</td>
                 <td><b>${paramName}</b></td>
-                <td class="${fail ? 'val-red' : 'text-black'}">${val.toFixed(3)}</td>
-                <td class="text-blue"${stvTip ? ` title="${stvTip}"` : ''}>${finalVal.toFixed(3)}</td>
+                <td class="${fail ? 'val-red' : 'text-black'}">${rawObj ? val.toFixed(3) : '-'}</td>
+                <td class="text-blue"${stvTipAttr}>${rawObj ? finalVal.toFixed(3) : '-'}</td>
                 <td>${rawObj ? rawObj.c : '-'}</td>
                 <td>${rawObj ? rawObj.t : '-'}</td>
                 <td class="${statusClass}">${status}</td>
-                <td>${fail ? rule.re : '-'}</td>
-                <td>${fail ? rule.ac : '-'}</td>
+                <td>${fail ? escapeHtml(rule.re || '') : '-'}</td>
+                <td>${fail ? escapeHtml(rule.ac || '') : '-'}</td>
             </tr>
         `);
     });
@@ -23407,19 +23421,20 @@ function renderDeviceResultsDetails(row) {
 
     const status = fail ? "FAIL" : "PASS";
     const statusClass = fail ? "val-red" : "status-pass";
-    const paramName = cols.find(c => c.k === rule.p)?.n ?? rule.p;
+    // Audit fix: use normalized ruleP for cols lookup + escape output to prevent XSS
+    const paramName = escapeHtml(cols.find(c => c.k === ruleP)?.n ?? rule.p);
 
     rowsHtml.push(`
       <tr>
-        <td>${row.did}</td>
+        <td>${escapeHtml(row.did || row.Device_ID || '-')}</td>
         <td><b>${paramName}</b></td>
-        <td class="${fail ? 'val-red' : 'text-black'}">${val.toFixed(3)}</td>
-        <td class="text-blue">${finalVal.toFixed(3)}</td>
+        <td class="${fail ? 'val-red' : 'text-black'}">${rawObj ? val.toFixed(3) : '-'}</td>
+        <td class="text-blue">${rawObj ? finalVal.toFixed(3) : '-'}</td>
         <td>${rawObj ? rawObj.c : '-'}</td>
         <td>${rawObj ? rawObj.t : '-'}</td>
         <td class="${statusClass}">${status}</td>
-        <td>${fail ? rule.re : '-'}</td>
-        <td>${fail ? rule.ac : '-'}</td>
+        <td>${fail ? escapeHtml(rule.re || '') : '-'}</td>
+        <td>${fail ? escapeHtml(rule.ac || '') : '-'}</td>
       </tr>
     `);
   });
