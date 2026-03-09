@@ -14558,9 +14558,9 @@ function normalizeCriteriaRows(rows) {
       s: pickField_(r, ['spectro', 's'], ''),
       p: pickField_(r, ['parameter', 'param', 'p'], ''),
       m: pickField_(r, ['metric', 'm'], ''),
-      l: pickField_(r, ['llimit', 'l.limit', 'l_limit', 'l limit', 'lowerlimit'], ''),
+      l: parseFloat(pickField_(r, ['llimit', 'l.limit', 'l_limit', 'l limit', 'lowerlimit'], '')),
       rel: pickField_(r, ['relation', 'rel', 'operator'], 'between'),
-      u: pickField_(r, ['ulimit', 'u.limit', 'u_limit', 'u limit', 'upperlimit'], ''),
+      u: parseFloat(pickField_(r, ['ulimit', 'u.limit', 'u_limit', 'u limit', 'upperlimit'], '')),
       re: pickField_(r, ['reason', 're'], ''),
       ac: pickField_(r, ['action', 'ac'], '')
     }))
@@ -16884,6 +16884,7 @@ function getEffectiveQCStatusForDevice(deviceId, testId, autoStatus) {
 
 // TEST SUCCESS
 function evaluateTestSuccess(row) {
+    if (!row || !row.raw) return 'PASS';
     let anyFail = false;
     dbCriteria.forEach(rule => {
         const rawObj = row.raw[rule.p];
@@ -20344,10 +20345,16 @@ function renderResultsDetails(row) {
     const tbody = document.getElementById('body-results-details');
     tbody.innerHTML = '';
 
+    if (!row || !row.raw) {
+        tbody.innerHTML = '<tr><td colspan="9">No data available</td></tr>';
+        return;
+    }
+
     if (typeof ensureRowRaw === 'function') ensureRowRaw(row);
 
+    const rowsHtml = [];
     dbCriteria.forEach(rule => {
-        const rawObj = row.raw[rule.p];
+        const rawObj = row.raw?.[rule.p];
         let val = 0, blank = 0, finalVal = 0;
 
         if (rawObj) {
@@ -20371,21 +20378,23 @@ function renderResultsDetails(row) {
 
         let status      = fail ? "FAIL" : "PASS";
         let statusClass = fail ? "val-red" : "status-pass";
+        const paramName = cols.find(c => c.k === rule.p)?.n ?? rule.p;
 
-        tbody.innerHTML += `
+        rowsHtml.push(`
             <tr>
                 <td>${row.did}</td>
-                <td><b>${cols.find(c => c.k === rule.p).n}</b></td>
+                <td><b>${paramName}</b></td>
                 <td class="${fail ? 'val-red' : 'text-black'}">${val.toFixed(3)}</td>
-                <td class="text-blue">${(finalVal+blank).toFixed(3)}</td>
+                <td class="text-blue">${finalVal.toFixed(3)}</td>
                 <td>${rawObj ? rawObj.c : '-'}</td>
                 <td>${rawObj ? rawObj.t : '-'}</td>
                 <td class="${statusClass}">${status}</td>
                 <td>${fail ? rule.re : '-'}</td>
                 <td>${fail ? rule.ac : '-'}</td>
             </tr>
-        `;
+        `);
     });
+    tbody.innerHTML = rowsHtml.join('');
 }
 
 
@@ -22271,8 +22280,14 @@ function renderDeviceResultsDetails(row) {
   if (!tbody || !row) return;
   tbody.innerHTML = '';
 
+  if (!row.raw) {
+    tbody.innerHTML = '<tr><td colspan="9">No data available</td></tr>';
+    return;
+  }
+
   if (typeof ensureRowRaw === 'function') ensureRowRaw(row);
 
+  const rowsHtml = [];
   dbCriteria.forEach(rule => {
     const rawObj = row.raw?.[rule.p];
     let val = 0, blank = 0, finalVal = 0;
@@ -22298,21 +22313,23 @@ function renderDeviceResultsDetails(row) {
 
     const status = fail ? "FAIL" : "PASS";
     const statusClass = fail ? "val-red" : "status-pass";
+    const paramName = cols.find(c => c.k === rule.p)?.n ?? rule.p;
 
-    tbody.innerHTML += `
+    rowsHtml.push(`
       <tr>
         <td>${row.did}</td>
-        <td><b>${cols.find(c => c.k === rule.p).n}</b></td>
+        <td><b>${paramName}</b></td>
         <td class="${fail ? 'val-red' : 'text-black'}">${val.toFixed(3)}</td>
-        <td class="text-blue">${(finalVal + blank).toFixed(3)}</td>
+        <td class="text-blue">${finalVal.toFixed(3)}</td>
         <td>${rawObj ? rawObj.c : '-'}</td>
         <td>${rawObj ? rawObj.t : '-'}</td>
         <td class="${statusClass}">${status}</td>
         <td>${fail ? rule.re : '-'}</td>
         <td>${fail ? rule.ac : '-'}</td>
       </tr>
-    `;
+    `);
   });
+  tbody.innerHTML = rowsHtml.join('');
 }
 
 function renderDeviceResultsRGB() {
