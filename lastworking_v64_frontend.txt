@@ -26238,6 +26238,9 @@ function detectAnomalies(data, params) {
             values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length
         );
         
+        // Skip if all values are identical (stdDev=0 would cause division by zero in Z-score)
+        if (stdDev === 0) return;
+        
         // Detect outliers (Z-score > 3)
         data.forEach((row, idx) => {
             const val = parseFloat(row.raw?.[p.key] || row[p.key]);
@@ -26446,7 +26449,7 @@ async function generateAnalyticsPDFReport() {
         yPos += 10;
         
         // Try to capture chart canvas
-        const chartCanvas = document.querySelector('#analytics-section canvas');
+        const chartCanvas = document.querySelector('#mod-analytics canvas');
         if (chartCanvas) {
             try {
                 const chartImage = chartCanvas.toDataURL('image/png');
@@ -26472,7 +26475,7 @@ async function generateAnalyticsPDFReport() {
 // Helper function to get selected parameters
 function getSelectedParameters() {
     const params = [];
-    const checkboxes = document.querySelectorAll('#analytics-section input[type="checkbox"]');
+    const checkboxes = document.querySelectorAll('#mod-analytics input[type="checkbox"]');
     checkboxes.forEach(cb => {
         if (cb.checked && cb.id && cb.id.startsWith('an-param-')) {
             const key = cb.id.replace('an-param-', '');
@@ -27049,46 +27052,6 @@ function renderQCComparisonChart() {
     });
 }
 
-// Modal Logic
-function expandChart(xKey, yKey) {
-    const modal = document.getElementById('chart-modal');
-    modal.classList.add('active');
-    document.getElementById('modal-chart-title').textContent = `${cols.find(c=>c.k===yKey).n} vs ${cols.find(c=>c.k===xKey).n}`;
-
-    if (modalChart) modalChart.destroy();
-    
-    const exclude = document.getElementById('scatter-exclude-outliers').checked;
-    const deviceId = document.getElementById('an-device').value;
-    const from = new Date(document.getElementById('date-rgb-from').value || '1900-01-01');
-    const to = new Date(document.getElementById('date-rgb-to').value || '2100-01-01'); to.setHours(23,59,59);
-
-    const rows = rgbData.filter(r => {
-        const d = parseDateObj(r.time);
-        return (!deviceId || r.did === deviceId) && d >= from && d <= to;
-    });
-
-    const stats = calculateRegression(rows, xKey, yKey, exclude); 
-    
-    const ctx = document.getElementById('c-modal').getContext('2d');
-    modalChart = new Chart(ctx, {
-        type: 'scatter',
-        data: {
-            datasets: [{
-                label: 'Data', data: stats.points, backgroundColor: getBandColor(yKey, 0.6), pointRadius: 2
-            }, {
-                type: 'line', label: `Fit: y=${stats.slope}x ${stats.intercept >=0?'+':''}${stats.intercept}, R²=${stats.r2}`,
-                data: stats.line, borderColor: '#333', borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            scales: {
-                x: { title: {display:true, text:cols.find(c=>c.k===xKey).n, font:{size:14}} },
-                y: { title: {display:true, text:cols.find(c=>c.k===yKey).n, font:{size:14}} }
-            }
-        }
-    });
-}
 
 
 function createUser() {
