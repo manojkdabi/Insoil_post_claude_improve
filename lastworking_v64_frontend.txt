@@ -26038,6 +26038,8 @@ function exportAnalyticsData(format) {
         exportToCSV(filteredData, selectedParams, device, dateFrom, dateTo);
     } else if (format === 'json') {
         exportToJSON(filteredData, selectedParams, device, dateFrom, dateTo);
+    } else if (format === 'excel') {
+        exportToExcel(filteredData, selectedParams, device, dateFrom, dateTo);
     }
 }
 
@@ -26486,40 +26488,6 @@ function getSelectedParameters() {
     return params;
 }
 
-// Update exportAnalyticsData to support Excel
-const originalExportAnalyticsData = exportAnalyticsData;
-exportAnalyticsData = function(format) {
-    if (format === 'excel') {
-        const device = document.getElementById('an-device')?.value || 'all';
-        const dateFrom = document.getElementById('an-date-from')?.value || 'all';
-        const dateTo = document.getElementById('an-date-to')?.value || 'all';
-        
-        if (!rgbData || rgbData.length === 0) {
-            alert('No data available to export');
-            return;
-        }
-        
-        // Get filtered data
-        const fromDate = dateFrom && dateFrom !== 'all' ? new Date(dateFrom) : new Date('1900-01-01');
-        const toDate = dateTo && dateTo !== 'all' ? new Date(dateTo) : new Date('2100-01-01');
-        toDate.setHours(23, 59, 59);
-        
-        let data = rgbData;
-        if (device && device !== 'all') {
-            data = data.filter(row => (row.deviceId || row.device_id) == device);
-        }
-        data = data.filter(row => {
-            const rowDate = new Date(row.timestamp || row.time);
-            return rowDate >= fromDate && rowDate <= toDate;
-        });
-        
-        const params = getSelectedParameters();
-        exportToExcel(data, params, device, dateFrom, dateTo);
-    } else {
-        originalExportAnalyticsData(format);
-    }
-};
-
 // Toggle compare mode
 function toggleCompareMode() {
     const checkbox = document.getElementById('an-compare-mode');
@@ -26629,7 +26597,7 @@ function renderDeviceComparison() {
             card.innerHTML = `
                 <div style="display:flex; align-items:center; margin-bottom:12px;">
                     <span class="device-indicator" style="background:${colors[idx % colors.length]}"></span>
-                    <strong>Device ${deviceId}</strong>
+                    <strong>Device ${escapeHtml(deviceId)}</strong>
                 </div>
                 <div style="color:#94a3b8; text-align:center; padding:20px;">No data available</div>
             `;
@@ -26650,11 +26618,11 @@ function renderDeviceComparison() {
         card.innerHTML = `
             <div style="display:flex; align-items:center; margin-bottom:12px;">
                 <span class="device-indicator" style="background:${colors[idx % colors.length]}"></span>
-                <strong>Device ${deviceId}</strong>
+                <strong>Device ${escapeHtml(deviceId)}</strong>
             </div>
             <div style="margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                    <span style="font-size:13px; color:#64748b;">${firstParam.label} Avg:</span>
+                    <span style="font-size:13px; color:#64748b;">${escapeHtml(firstParam.label)} Avg:</span>
                     <strong style="font-size:16px;">${stats.mean.toFixed(2)}</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
@@ -26690,8 +26658,8 @@ function renderTrendChart() {
     const devices = getSelectedDevices();
     const compareMode = document.getElementById('an-compare-mode')?.checked;
     
-    const f = new Date(document.getElementById('date-rgb-from').value||'1900-01-01');
-    const t = new Date(document.getElementById('date-rgb-to').value||'2100-01-01'); t.setHours(23,59,59);
+    const f = new Date(document.getElementById('date-rgb-from')?.value||'1900-01-01');
+    const t = new Date(document.getElementById('date-rgb-to')?.value||'2100-01-01'); t.setHours(23,59,59);
     
     let datasets = [];
     
@@ -26730,6 +26698,11 @@ function renderTrendChart() {
             const d=parseDateObj(r.time); 
             return (!did || r.did===did || r.device_id===did || r.deviceId===did) && d>=f && d<=t; 
         }).sort((a,b)=>parseDateObj(a.time)-parseDateObj(b.time)));
+
+        if (rows.length === 0) {
+            if (chartObjs.trend) { chartObjs.trend.destroy(); chartObjs.trend = null; }
+            return;
+        }
 
         const labels = rows.map(r=>r.time);
         datasets = keys.map(k=>({
@@ -26795,9 +26768,9 @@ function renderFacetCharts() {
     const exclude = document.getElementById('scatter-exclude-outliers').checked;
     
     // Filter Data
-    const deviceId = document.getElementById('an-device').value;
-    const from = new Date(document.getElementById('date-rgb-from').value || '1900-01-01');
-    const to = new Date(document.getElementById('date-rgb-to').value || '2100-01-01'); to.setHours(23,59,59);
+    const deviceId = document.getElementById('an-device')?.value || '';
+    const from = new Date(document.getElementById('date-rgb-from')?.value || '1900-01-01');
+    const to = new Date(document.getElementById('date-rgb-to')?.value || '2100-01-01'); to.setHours(23,59,59);
 
     const rows = normalizeAnalyticsRows(rgbData.filter(r => {
         const d = parseDateObj(r.time);
@@ -26834,8 +26807,8 @@ function renderFacetCharts() {
             type: 'scatter',
             data: {
                 datasets: [
-                    { label:'Data', data:stats.points, backgroundColor: getBandColor(yCol.k,0.6), pointRadius:1 },
-                    { type:'line', label:'Fit', data:stats.line, borderColor:'#333', borderWidth:1, pointRadius:0, animation: false }
+                    { label:'Data', data: stats.points || [], backgroundColor: getBandColor(yCol.k,0.6), pointRadius:1 },
+                    { type:'line', label:'Fit', data: stats.line || [], borderColor:'#333', borderWidth:1, pointRadius:0, animation: false }
                 ]
             },
             options: { 
@@ -26978,14 +26951,19 @@ function renderS1Chart() {
     const ctx = document.getElementById('c-s1');
     if(!ctx) return;
     
-    const deviceId = document.getElementById('an-device').value;
-    const from = new Date(document.getElementById('date-rgb-from').value || '1900-01-01');
-    const to = new Date(document.getElementById('date-rgb-to').value || '2100-01-01'); to.setHours(23,59,59);
+    const deviceId = document.getElementById('an-device')?.value || '';
+    const from = new Date(document.getElementById('date-rgb-from')?.value || '1900-01-01');
+    const to = new Date(document.getElementById('date-rgb-to')?.value || '2100-01-01'); to.setHours(23,59,59);
     
     const rows = normalizeAnalyticsRows(rgbData.filter(r => {
         const d = parseDateObj(r.time);
         return (!deviceId || r.did === deviceId) && d >= from && d <= to;
     }).sort((a,b) => parseDateObj(a.time) - parseDateObj(b.time)));
+
+    if (rows.length === 0) {
+        if (s1ChartInstance) { s1ChartInstance.destroy(); s1ChartInstance = null; }
+        return;
+    }
 
     const getData = (key) => rows.map(r => r.raw[key]?.c || null);
     const labels = rows.map(r => r.time);
@@ -27343,8 +27321,10 @@ function setDateRange(range) {
 
     const f = d => d.toISOString().split('T')[0];
 
-    document.getElementById('date-rgb-from').value = f(from);
-    document.getElementById('date-rgb-to').value   = f(now);
+    const rgbFrom = document.getElementById('date-rgb-from');
+    const rgbTo = document.getElementById('date-rgb-to');
+    if (rgbFrom) rgbFrom.value = f(from);
+    if (rgbTo) rgbTo.value = f(now);
     const anFrom = document.getElementById('an-date-from');
     const anTo = document.getElementById('an-date-to');
     if (anFrom) anFrom.value = f(from);
@@ -35775,7 +35755,7 @@ const UserPrefs = {
     if (prefs.resultsLowerMode) document.getElementById('results-lower-mode').value = prefs.resultsLowerMode;
     
     // Analytics Module
-    if (prefs.analyticsDevice) document.getElementById('an-device').value = prefs.analyticsDevice;
+    { const sel = document.getElementById('an-device'); if (sel && prefs.analyticsDevice) sel.value = prefs.analyticsDevice; }
     
     showToast('Preferences restored', 'info', 2000);
   },
