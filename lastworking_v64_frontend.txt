@@ -9148,7 +9148,7 @@
         <div class="toolbar">
           <div style="display:flex; align-items:center; gap:8px;">
             <label style="font-size:0.85rem; font-weight:500;">Device:</label>
-            <select id="an-device" onchange="updateAnalyticsCharts()" style="min-width:150px;" multiple size="1" title="Hold Ctrl/Cmd to select multiple devices">
+            <select id="an-device" onchange="updateAnalyticsCharts()" style="min-width:150px;" title="Hold Ctrl/Cmd to select multiple devices in Compare mode">
                 <option value="">Loading devices...</option>
             </select>
             <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem;">
@@ -25748,7 +25748,7 @@ function normalizeAnalyticsRows(rows) {
 
 // ============ NEW: Analytics Enhancement Functions ============
 
-// Parameter thresholds configuration
+// Parameter thresholds configuration (defaults — can be overridden via window.__analyticsThresholds)
 const PARAMETER_THRESHOLDS = {
     ammonium: { min: 0, max: 100, optimal: [10, 40], unit: ' mg/kg' },
     phosphorus: { min: 0, max: 100, optimal: [20, 50], unit: ' mg/kg' },
@@ -25758,6 +25758,12 @@ const PARAMETER_THRESHOLDS = {
     copper: { min: 0.1, max: 10, optimal: [0.5, 3], unit: ' mg/kg' },
     calcium: { min: 200, max: 5000, optimal: [500, 2000], unit: ' mg/kg' }
 };
+
+// Return effective threshold for a parameter: user config overrides defaults
+function getEffectiveThreshold(paramKey) {
+    const userThresholds = window.__analyticsThresholds || {};
+    return userThresholds[paramKey] || PARAMETER_THRESHOLDS[paramKey] || null;
+}
 
 // Calculate statistics for a parameter
 function calculateStatistics(data, paramKey) {
@@ -25797,7 +25803,8 @@ function calculateStatistics(data, paramKey) {
         median: median,
         stdDev: stdDev,
         q1: q1,
-        q3: q3
+        q3: q3,
+        completeness: data.length > 0 ? parseFloat((values.length / data.length * 100).toFixed(1)) : 0
     };
 }
 
@@ -25853,8 +25860,7 @@ function renderStatisticsSummary() {
         
         if (!stats) return;
         
-        const totalPossible = filteredData.length;
-        const completeness = (stats.count / totalPossible * 100).toFixed(1);
+        const completeness = stats.completeness;
         
         const card = document.createElement('div');
         card.className = 'stat-card';
@@ -25943,9 +25949,11 @@ function checkThresholdsAndUpdateAlerts() {
     
     const alerts = [];
     
-    // Check each parameter against thresholds
-    Object.keys(PARAMETER_THRESHOLDS).forEach(paramKey => {
-        const threshold = PARAMETER_THRESHOLDS[paramKey];
+    // Check each parameter against thresholds (uses user-overridable getEffectiveThreshold)
+    const effectiveThresholdKeys = Object.keys(Object.assign({}, PARAMETER_THRESHOLDS, window.__analyticsThresholds || {}));
+    effectiveThresholdKeys.forEach(paramKey => {
+        const threshold = getEffectiveThreshold(paramKey);
+        if (!threshold) return;
         const value = typeof calcMetric === 'function' && recentData.raw 
             ? parseFloat(calcMetric(recentData.raw, paramKey))
             : parseFloat(recentData[paramKey]);
@@ -26528,7 +26536,7 @@ function getSelectedDevices() {
     
     const compareMode = document.getElementById('an-compare-mode')?.checked;
     
-    if (compareMode && deviceSelect.hasAttribute('multiple')) {
+    if (compareMode) {
         return Array.from(deviceSelect.selectedOptions).map(opt => opt.value).filter(v => v);
     } else {
         const value = deviceSelect.value;
@@ -26652,7 +26660,7 @@ function renderTrendChart() {
     const chk = document.querySelectorAll('#an-param-strip input:checked');
     const keys = Array.from(chk).map(cb=>cb.value);
     
-    if(keys.length===0){ if(chartObjs.trend) chartObjs.trend.clear(); return; }
+    if(keys.length===0){ if(chartObjs.trend){ chartObjs.trend.destroy(); chartObjs.trend=null; } return; }
     
     // Support for multi-device selection
     const devices = getSelectedDevices();
