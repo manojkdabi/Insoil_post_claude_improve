@@ -25829,11 +25829,11 @@ function renderStatisticsSummary() {
     const toDate = dateTo ? new Date(dateTo) : new Date('2100-01-01');
     toDate.setHours(23, 59, 59);
     
-    const filteredData = rgbData.filter(row => {
+    const filteredData = normalizeAnalyticsRows(rgbData.filter(row => {
         const deviceMatch = !device || row.did === device || row.device_id === device || row.deviceId === device;
         const rowDate = parseDateObj(row.time) || new Date(row.timestamp || row.Timestamp);
         return deviceMatch && rowDate >= fromDate && rowDate <= toDate;
-    });
+    }));
     
     if (filteredData.length === 0) {
         statsGrid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding:20px; color:#94a3b8;">No data available for the selected filters</div>';
@@ -26593,11 +26593,11 @@ function renderDeviceComparison() {
     
     devices.forEach((deviceId, idx) => {
         // Filter data for this device
-        const deviceData = rgbData.filter(row => {
+        const deviceData = normalizeAnalyticsRows(rgbData.filter(row => {
             const deviceMatch = row.did === deviceId || row.device_id === deviceId || row.deviceId === deviceId;
             const rowDate = parseDateObj(row.time) || new Date(row.timestamp || row.Timestamp);
             return deviceMatch && rowDate >= fromDate && rowDate <= toDate;
-        });
+        }));
         
         if (deviceData.length === 0) {
             const card = document.createElement('div');
@@ -26619,7 +26619,7 @@ function renderDeviceComparison() {
         
         if (!stats) return;
         
-        const completeness = (stats.count / deviceData.length * 100).toFixed(1);
+        const completeness = stats.completeness;
         
         const card = document.createElement('div');
         card.className = 'stat-card';
@@ -26777,8 +26777,8 @@ function renderFacetCharts() {
     
     // Filter Data
     const deviceId = document.getElementById('an-device')?.value || '';
-    const from = new Date(document.getElementById('date-rgb-from')?.value || '1900-01-01');
-    const to = new Date(document.getElementById('date-rgb-to')?.value || '2100-01-01'); to.setHours(23,59,59);
+    const from = new Date(document.getElementById('an-date-from')?.value || '1900-01-01');
+    const to = new Date(document.getElementById('an-date-to')?.value || '2100-01-01'); to.setHours(23,59,59);
 
     const rows = normalizeAnalyticsRows(rgbData.filter(r => {
         const d = parseDateObj(r.time);
