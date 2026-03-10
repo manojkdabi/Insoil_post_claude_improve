@@ -3818,6 +3818,140 @@
       font-weight: 600;
     }
 
+    /* ============================================================
+       Analytics-2 Module Styles
+    ============================================================ */
+    #mod-analytics2 { display: flex; flex-direction: column; height: 100%; }
+    #mod-analytics2 .a2-header {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 16px; background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+    }
+    #mod-analytics2 .a2-tabs {
+      display: flex; gap: 0; border-bottom: 2px solid var(--border-color);
+      background: var(--bg-surface); padding: 0 16px;
+      flex-shrink: 0;
+    }
+    .a2-tab-btn {
+      padding: 10px 18px; border: none; background: none;
+      cursor: pointer; font-size: 0.88rem; font-weight: 500; color: #64748b;
+      border-bottom: 3px solid transparent; margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .a2-tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .a2-tab-btn:hover:not(.active) { color: #1e293b; }
+    .a2-tab-pane { display: none; flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .a2-tab-pane.active { display: block; }
+
+    /* KPI Strip */
+    .a2-kpi-strip {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .a2-kpi-card {
+      flex: 1 1 140px; background: #fff; border: 1px solid #e2e8f0;
+      border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .a2-kpi-card .a2-kpi-label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; letter-spacing:.04em; text-transform:uppercase; margin-bottom:4px; }
+    .a2-kpi-card .a2-kpi-value { font-size: 1.5rem; font-weight: 700; color: #1e293b; line-height:1; }
+    .a2-kpi-card .a2-kpi-sub   { font-size: 0.75rem; color: #64748b; margin-top: 3px; }
+
+    /* Device Health Grid */
+    .a2-device-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px; margin-bottom: 16px;
+    }
+    .a2-device-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 14px 16px; cursor: pointer; transition: box-shadow .15s, transform .15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .a2-device-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12); transform: translateY(-2px); }
+    .a2-device-card.status-pass  { border-left: 4px solid #16a34a; }
+    .a2-device-card.status-fail  { border-left: 4px solid #dc2626; }
+    .a2-device-card.status-unknown { border-left: 4px solid #d97706; }
+    .a2-device-card .a2-dc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .a2-device-card .a2-dc-id    { font-weight: 700; font-size: 0.9rem; color: #1e293b; }
+    .a2-device-card .a2-dc-badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+    .badge-pass    { background: #dcfce7; color: #15803d; }
+    .badge-fail    { background: #fee2e2; color: #b91c1c; }
+    .badge-unknown { background: #fef9c3; color: #b45309; }
+    .a2-device-card .a2-dc-meta  { font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; }
+    .a2-dc-sparkline-row { display: flex; gap: 4px; align-items: flex-end; height: 28px; }
+    .a2-dc-bar { flex: 1; background: #93c5fd; border-radius: 2px 2px 0 0; min-height: 3px; }
+
+    /* Alert Banner */
+    .a2-alert-ticker {
+      background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px;
+      padding: 8px 14px; margin-bottom: 14px; font-size: 0.82rem; color: #92400e;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* Trend Tab */
+    .a2-chart-toolbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .a2-chart-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .a2-chart-card .a2-cc-title {
+      font-size: 0.88rem; font-weight: 600; color: #475569; margin-bottom: 10px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .a2-param-grid {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+    }
+    .a2-param-pill {
+      padding: 4px 12px; border-radius: 999px; border: 1px solid #cbd5e1;
+      font-size: 0.78rem; cursor: pointer; background: #f8fafc; color: #475569;
+      user-select: none; transition: all .15s;
+    }
+    .a2-param-pill.active { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; font-weight: 600; }
+    .a2-param-pill input { display: none; }
+
+    /* Comparison Tab */
+    .a2-compare-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;
+    }
+    .a2-cmp-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .a2-cmp-bar-wrap { height: 8px; background: #e2e8f0; border-radius: 4px; margin: 4px 0 2px; overflow: hidden; }
+    .a2-cmp-bar      { height: 100%; background: #3b82f6; border-radius: 4px; }
+    .a2-delta-pos { color: #16a34a; font-weight: 700; }
+    .a2-delta-neg { color: #dc2626; font-weight: 700; }
+
+    /* Stats Tab */
+    .a2-stats-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+    .a2-stats-table th { background: #f1f5f9; padding: 7px 10px; text-align: left; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+    .a2-stats-table td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+    .a2-stats-table tr:hover td { background: #f8fafc; }
+    .a2-health-bar-wrap { width: 80px; height: 7px; background: #e2e8f0; border-radius: 4px; display: inline-block; vertical-align: middle; overflow: hidden; }
+    .a2-health-bar      { height: 100%; border-radius: 4px; }
+    .hb-good   { background: #16a34a; }
+    .hb-medium { background: #d97706; }
+    .hb-poor   { background: #dc2626; }
+
+    /* Anomaly Tab */
+    .a2-anomaly-list { display: flex; flex-direction: column; gap: 8px; }
+    .a2-anomaly-item {
+      background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #dc2626;
+      border-radius: 8px; padding: 10px 14px; font-size: 0.83rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .a2-anomaly-item .a2-ai-left { display: flex; flex-direction: column; gap: 2px; }
+    .a2-anomaly-item .a2-ai-param { font-weight: 600; color: #1e293b; }
+    .a2-anomaly-item .a2-ai-meta  { color: #94a3b8; font-size: 0.75rem; }
+    .a2-anomaly-item .a2-ai-val   { font-size: 1.1rem; font-weight: 700; color: #dc2626; }
+    .a2-empty-state {
+      text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 0.9rem;
+    }
+    .a2-empty-state .a2-es-icon { font-size: 2.5rem; margin-bottom: 8px; }
+
+    /* ============ END Analytics-2 Styles ============ */
+
     /* Analytics Enhancements - Statistical Summary */
     .stats-grid {
       display: grid;
@@ -7470,6 +7604,20 @@
       Analytics
     </div>
 
+    <div class="nav-item" onclick="nav('analytics2', event)">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 3v18h18" />
+        <path d="M7 12v6" />
+        <path d="M11 8v10" />
+        <path d="M16 5v13" />
+        <circle cx="7" cy="12" r="1.5" fill="#7c3aed" />
+        <circle cx="11" cy="8" r="1.5" fill="#7c3aed" />
+        <circle cx="16" cy="5" r="1.5" fill="#7c3aed" />
+      </svg>
+      Analytics-2
+    </div>
+
     <div class="nav-item" onclick="nav('fertilizer', event)">
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round" aria-hidden="true">
@@ -9267,6 +9415,180 @@
         </div>
       </div>
     </div>
+
+
+    <!-- Analytics-2 Module -->
+    <!-- ==================== Analytics-2 Module (Redesign) ==================== -->
+    <div id="mod-analytics2" class="module-view">
+
+      <!-- Top Toolbar -->
+      <div class="a2-header module-header">
+        <label style="font-size:0.85rem;font-weight:500;">Device:</label>
+        <select id="a2-device" onchange="a2_onDeviceChange()" style="min-width:160px;" title="Select device(s)">
+          <option value="">All Devices</option>
+        </select>
+        <input type="date" id="a2-date-from" class="date-input" onchange="a2_onDateChange()">
+        <span style="font-size:0.8em;color:#94a3b8;">to</span>
+        <input type="date" id="a2-date-to"   class="date-input" onchange="a2_onDateChange()">
+        <button class="btn btn-outline" onclick="a2_setPreset(7)">7 Days</button>
+        <button class="btn btn-outline" onclick="a2_setPreset(30)">30 Days</button>
+        <button class="btn btn-outline" onclick="a2_setPreset('month')">This Month</button>
+        <button class="btn btn-blue"    onclick="a2_refresh()">🔄 Refresh</button>
+        <button class="btn btn-outline" onclick="a2_exportCSV()">💾 CSV</button>
+        <button class="btn btn-outline" onclick="a2_exportExcel()">📊 Excel</button>
+      </div>
+
+      <!-- 5-Tab Bar -->
+      <div class="a2-tabs">
+        <button class="a2-tab-btn active" onclick="a2_showTab('overview',this)">🏠 Fleet Overview</button>
+        <button class="a2-tab-btn"        onclick="a2_showTab('trends',this)">📈 Trends</button>
+        <button class="a2-tab-btn"        onclick="a2_showTab('comparison',this)">🔄 Comparison</button>
+        <button class="a2-tab-btn"        onclick="a2_showTab('statistics',this)">📊 Statistics</button>
+        <button class="a2-tab-btn"        onclick="a2_showTab('anomalies',this)">🚨 Anomalies</button>
+      </div>
+
+      <!-- ── TAB: Fleet Overview ── -->
+      <div id="a2-tab-overview" class="a2-tab-pane active">
+
+        <!-- Live Alert Banner -->
+        <div id="a2-alert-banner" class="a2-alert-ticker" style="display:none;">
+          <span>⚠️</span>
+          <span id="a2-alert-text">No alerts</span>
+        </div>
+
+        <!-- KPI Strip -->
+        <div class="a2-kpi-strip" id="a2-kpi-strip">
+          <div class="a2-kpi-card">
+            <div class="a2-kpi-label">Total Devices</div>
+            <div class="a2-kpi-value" id="a2-kpi-total">—</div>
+            <div class="a2-kpi-sub">registered</div>
+          </div>
+          <div class="a2-kpi-card">
+            <div class="a2-kpi-label">✅ PASS Rate</div>
+            <div class="a2-kpi-value" id="a2-kpi-pass">—</div>
+            <div class="a2-kpi-sub">last 30 days</div>
+          </div>
+          <div class="a2-kpi-card">
+            <div class="a2-kpi-label">Tests Today</div>
+            <div class="a2-kpi-value" id="a2-kpi-today">—</div>
+            <div class="a2-kpi-sub">samples</div>
+          </div>
+          <div class="a2-kpi-card">
+            <div class="a2-kpi-label">🔴 Anomalies</div>
+            <div class="a2-kpi-value" id="a2-kpi-anomaly">—</div>
+            <div class="a2-kpi-sub">detected</div>
+          </div>
+          <div class="a2-kpi-card">
+            <div class="a2-kpi-label">Data Completeness</div>
+            <div class="a2-kpi-value" id="a2-kpi-completeness">—</div>
+            <div class="a2-kpi-sub">avg across params</div>
+          </div>
+          <div class="a2-kpi-card">
+            <div class="a2-kpi-label">Last Sync</div>
+            <div class="a2-kpi-value" id="a2-kpi-sync" style="font-size:1rem;">—</div>
+            <div class="a2-kpi-sub">data age</div>
+          </div>
+        </div>
+
+        <!-- Device Health Cards -->
+        <h3 style="margin:0 0 10px;font-size:0.95rem;font-weight:700;color:#475569;">📡 Device Health</h3>
+        <div id="a2-device-grid" class="a2-device-grid"></div>
+      </div>
+
+      <!-- ── TAB: Trends ── -->
+      <div id="a2-tab-trends" class="a2-tab-pane">
+        <div class="a2-chart-toolbar">
+          <label style="font-size:0.82rem;font-weight:500;">Parameters:</label>
+          <div id="a2-param-pills" class="a2-param-grid"></div>
+          <label style="font-size:0.82rem;display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="a2-show-thresholds" onchange="a2_renderTrend()"> Show Thresholds
+          </label>
+        </div>
+        <div class="a2-chart-card">
+          <div class="a2-cc-title">
+            Absorbance / Value Trend
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-zoom" onclick="a2ChartObjs.trend && a2ChartObjs.trend.resetZoom()">Reset Zoom</button>
+              <button class="btn btn-sm btn-slate" onclick="a2_downloadChart('a2-c-trend')">⬇ PNG</button>
+            </div>
+          </div>
+          <canvas id="a2-c-trend" style="max-height:320px;"></canvas>
+        </div>
+        <div class="a2-chart-card">
+          <div class="a2-cc-title">S1 &amp; S2 Band Health
+            <button class="btn btn-sm btn-slate" onclick="a2_downloadChart('a2-c-s1')">⬇ PNG</button>
+          </div>
+          <canvas id="a2-c-s1" style="max-height:260px;"></canvas>
+        </div>
+      </div>
+
+      <!-- ── TAB: Comparison ── -->
+      <div id="a2-tab-comparison" class="a2-tab-pane">
+        <div class="a2-chart-toolbar">
+          <label style="font-size:0.82rem;font-weight:500;">Select Devices to Compare:</label>
+          <select id="a2-cmp-devices" multiple size="4"
+            style="min-width:180px;border:1px solid #cbd5e1;border-radius:6px;padding:4px;font-size:0.83rem;"
+            onchange="a2_renderComparison()">
+          </select>
+          <span style="font-size:0.75rem;color:#94a3b8;">Hold Ctrl/Cmd for multiple</span>
+          <label style="font-size:0.82rem;font-weight:500;margin-left:12px;">Parameter:</label>
+          <select id="a2-cmp-param" onchange="a2_renderComparison()" class="search-input" style="min-width:140px;"></select>
+        </div>
+        <div id="a2-compare-grid" class="a2-compare-grid"></div>
+        <div class="a2-chart-card" style="margin-top:12px;">
+          <div class="a2-cc-title">Side-by-Side Bar Chart
+            <button class="btn btn-sm btn-slate" onclick="a2_downloadChart('a2-c-bar')">⬇ PNG</button>
+          </div>
+          <canvas id="a2-c-bar" style="max-height:280px;"></canvas>
+        </div>
+      </div>
+
+      <!-- ── TAB: Statistics ── -->
+      <div id="a2-tab-statistics" class="a2-tab-pane">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;font-size:0.95rem;font-weight:700;color:#475569;">Parameter Statistical Summary</h3>
+          <button class="btn btn-outline" onclick="a2_exportStatsCSV()">💾 Export Stats CSV</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="a2-stats-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>Count</th>
+                <th>Mean</th>
+                <th>Std Dev</th>
+                <th>Min</th>
+                <th>Max</th>
+                <th>Completeness</th>
+                <th>Health</th>
+              </tr>
+            </thead>
+            <tbody id="a2-stats-tbody"></tbody>
+          </table>
+        </div>
+        <div class="a2-chart-card" style="margin-top:16px;">
+          <div class="a2-cc-title">Parameter Distribution (Box-Plot Approximation)
+            <button class="btn btn-sm btn-slate" onclick="a2_downloadChart('a2-c-dist')">⬇ PNG</button>
+          </div>
+          <canvas id="a2-c-dist" style="max-height:260px;"></canvas>
+        </div>
+      </div>
+
+      <!-- ── TAB: Anomalies ── -->
+      <div id="a2-tab-anomalies" class="a2-tab-pane">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;font-size:0.95rem;font-weight:700;color:#475569;">🚨 Statistical Anomaly Detection</h3>
+          <label style="font-size:0.82rem;display:flex;align-items:center;gap:6px;">
+            Z-score threshold:
+            <input type="number" id="a2-zscore-thresh" value="2.5" step="0.1" min="1" max="5"
+              style="width:60px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:0.82rem;"
+              onchange="a2_renderAnomalies()">
+          </label>
+        </div>
+        <div id="a2-anomaly-list" class="a2-anomaly-list"></div>
+      </div>
+
+    </div><!-- end mod-analytics2 -->
 
 
     <!-- Nutrient Manager Module -->
@@ -11710,13 +12032,13 @@ let rowsPerPage = 50;
   
     // --- PERMISSIONS CONFIGURATION ---
 // Define which modules each role can see.
-// ID matching HTML ids: 'dashboard', 'rgb', 'qaqc', 'results', 'stv-direct', 'db', 'devices', 'analytics', 'admin'
+// ID matching HTML ids: 'dashboard', 'rgb', 'qaqc', 'results', 'stv-direct', 'db', 'devices', 'analytics', 'analytics2', 'admin'
 const ROLE_PERMISSIONS = {
   'Admin':      ['all'],
   'QC':         ['dashboard', 'rgb', 'qaqc', 'results', 'stv-direct', 'labval'],
-  'Manager':    ['dashboard', 'rgb', 'results', 'stv-direct', 'analytics', 'devices', 'fertilizer','fertilizer2', 'impact', 'feedback', 'labval'],
+  'Manager':    ['dashboard', 'rgb', 'results', 'stv-direct', 'analytics', 'analytics2', 'devices', 'fertilizer','fertilizer2', 'impact', 'feedback', 'labval'],
   'Technician': ['dashboard', 'devices', 'rgb', 'feedback', 'labval'],
-  'Demo':       ['dashboard', 'analytics', 'results', 'stv-direct', 'fertilizer','fertilizer2', 'labval']
+  'Demo':       ['dashboard', 'analytics', 'analytics2', 'results', 'stv-direct', 'fertilizer','fertilizer2', 'labval']
 };
 
 
@@ -16726,6 +17048,23 @@ function loadOperationalData(opts = {}) {
             devs.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
 
           if (devs.includes(current)) sel.value = current;
+        }
+
+        // Populate Analytics-2 device dropdowns
+        const a2DevSel = document.getElementById('a2-device');
+        const a2CmpSel = document.getElementById('a2-cmp-devices');
+        if ((a2DevSel || a2CmpSel) && Array.isArray(rgbData) && rgbData.length > 0) {
+          const devs2 = [...new Set(rgbData
+            .map(d => (d?.Device_ID ?? d?.did ?? d?.device_id ?? '').toString().trim())
+            .filter(Boolean)
+          )].sort();
+          const opts2Html = devs2.map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+          if (a2DevSel) {
+            const cur2 = a2DevSel.value;
+            a2DevSel.innerHTML = '<option value="">All Devices</option>' + opts2Html;
+            if (devs2.includes(cur2)) a2DevSel.value = cur2;
+          }
+          if (a2CmpSel) { a2CmpSel.innerHTML = opts2Html; }
         }
 
         // ✅ Default RGB/Abs date range only if user hasn't set it
@@ -21853,6 +22192,10 @@ function nav(id, e) {
         if (isUserNav) ensureOperationalDataLoaded({ mode: 'full', reason: 'nav-analytics' });
         updateAnalyticsCharts();
     }
+    if (id === 'analytics2') {
+        if (isUserNav) ensureOperationalDataLoaded({ mode: 'full', reason: 'nav-analytics2' });
+        a2_init();
+    }
     if (id === 'dashboard') {
         renderDashboard();
     }
@@ -22469,6 +22812,7 @@ const ACCESS_TREE = [
         ]}
     ]},
     { id: 'analytics', label: 'Analytics' },
+    { id: 'analytics2', label: 'Analytics-2' },
     { id: 'fertilizer', label: 'Nutrient Manager', children: [
         { id: 'fertilizer.controls', label: 'Controls', children: [
             { id: 'fertilizer.controls.schedule-toggle', label: 'Schedule Toggle' },
@@ -27436,6 +27780,696 @@ function getSelectedAnalyticsParams() {
 
 
 //---------------- Database module end -------------------
+
+// ============================================================
+//  Analytics-2 Module  (a2_ prefix — parallel to Analytics)
+// ============================================================
+
+const a2ChartObjs = { trend: null, s1: null, bar: null, dist: null };
+let   a2UpdateTimer = null;
+
+// ── Helpers ──────────────────────────────────────────────────
+
+function a2_getData() {
+    return window.rgbData || (typeof rgbData !== 'undefined' ? rgbData : []) || [];
+}
+
+function a2_filteredData() {
+    const allData  = a2_getData();
+    const devSel   = document.getElementById('a2-device')?.value || '';
+    const fromVal  = document.getElementById('a2-date-from')?.value;
+    const toVal    = document.getElementById('a2-date-to')?.value;
+    const fromDate = fromVal ? new Date(fromVal) : new Date('1900-01-01');
+    const toDate   = toVal   ? new Date(toVal)   : new Date('2100-12-31');
+    toDate.setHours(23,59,59);
+
+    return allData.filter(row => {
+        const d = parseDateObj ? parseDateObj(row.time) : null;
+        const rDate = d || new Date(row.timestamp || row.Timestamp || 0);
+        if (rDate < fromDate || rDate > toDate) return false;
+        if (devSel) {
+            const rid = row.did || row.device_id || row.deviceId || '';
+            if (rid !== devSel) return false;
+        }
+        return true;
+    });
+}
+
+function a2_getDevices(data) {
+    const set = new Set();
+    (data || a2_getData()).forEach(r => {
+        const id = r.did || r.device_id || r.deviceId || '';
+        if (id) set.add(id);
+    });
+    return [...set].sort();
+}
+
+function a2_colVal(row, colKey) {
+    if (row.raw && row.raw[colKey] !== undefined) return parseFloat(row.raw[colKey]);
+    if (row[colKey] !== undefined) return parseFloat(row[colKey]);
+    return NaN;
+}
+
+function a2_calcStats(data, key) {
+    const vals = data.map(r => a2_colVal(r, key)).filter(v => isFinite(v));
+    if (!vals.length) return null;
+    const n   = vals.length;
+    const sum = vals.reduce((a,b)=>a+b, 0);
+    const mean= sum/n;
+    const variance = vals.reduce((a,v)=>a+(v-mean)**2,0)/n;
+    const std = Math.sqrt(variance);
+    const sorted = [...vals].sort((a,b)=>a-b);
+    const min = sorted[0], max = sorted[n-1];
+    const completeness = data.length > 0 ? Math.round(n/data.length*100) : 0;
+    return { n, mean, std, min, max, completeness, vals, sorted };
+}
+
+function a2_escHtml(s) {
+    return typeof escapeHtml === 'function' ? escapeHtml(s) : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function a2_destroyChart(key) {
+    if (a2ChartObjs[key]) { try { a2ChartObjs[key].destroy(); } catch(e){} a2ChartObjs[key]=null; }
+}
+
+function a2_downloadChart(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const out = document.createElement('canvas');
+    out.width = canvas.width; out.height = canvas.height;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,out.width,out.height);
+    ctx.drawImage(canvas,0,0);
+    const link = document.createElement('a');
+    link.download = canvasId + '.png';
+    link.href = out.toDataURL('image/png');
+    link.click();
+}
+
+// ── Init ─────────────────────────────────────────────────────
+
+function a2_init() {
+    const mod = document.getElementById('mod-analytics2');
+    if (!mod) return;
+
+    // Populate toolbar device dropdown
+    const allData = a2_getData();
+    const devSel  = document.getElementById('a2-device');
+    if (devSel) {
+        const devices = a2_getDevices(allData);
+        devSel.innerHTML = '<option value="">All Devices</option>' +
+            devices.map(d=>`<option value="${a2_escHtml(d)}">${a2_escHtml(d)}</option>`).join('');
+    }
+
+    // Populate comparison device list
+    const cmpSel = document.getElementById('a2-cmp-devices');
+    if (cmpSel) {
+        const devices = a2_getDevices(allData);
+        cmpSel.innerHTML = devices.map(d=>`<option value="${a2_escHtml(d)}">${a2_escHtml(d)}</option>`).join('');
+    }
+
+    // Populate comparison param dropdown
+    const cmpParam = document.getElementById('a2-cmp-param');
+    if (cmpParam) {
+        cmpParam.innerHTML = (Array.isArray(cols)?cols:[]).map(c=>`<option value="${c.k}">${c.n}</option>`).join('');
+    }
+
+    // Populate trend param pills
+    const pillsDiv = document.getElementById('a2-param-pills');
+    if (pillsDiv) {
+        const defaults = ['ammonium','phosphorus','oc'];
+        pillsDiv.innerHTML = (Array.isArray(cols)?cols:[]).map(c=>{
+            const isOn = defaults.includes(c.k) ? 'active' : '';
+            return `<label class="a2-param-pill ${isOn}"><input type="checkbox" value="${c.k}" ${isOn?'checked':''} onchange="this.parentElement.classList.toggle('active',this.checked);a2_schedRefresh()">${c.n}</label>`;
+        }).join('');
+    }
+
+    // Set default date range (last 30 days)
+    if (!document.getElementById('a2-date-from')?.value) {
+        const to = new Date(), from = new Date();
+        from.setDate(from.getDate()-30);
+        if (document.getElementById('a2-date-from')) document.getElementById('a2-date-from').value = from.toISOString().slice(0,10);
+        if (document.getElementById('a2-date-to'))   document.getElementById('a2-date-to').value   = to.toISOString().slice(0,10);
+    }
+
+    a2_refresh();
+}
+
+function a2_schedRefresh() {
+    if (a2UpdateTimer) clearTimeout(a2UpdateTimer);
+    a2UpdateTimer = setTimeout(a2_refresh, 200);
+}
+
+function a2_onDeviceChange() { a2_refresh(); }
+function a2_onDateChange()   { a2_refresh(); }
+
+function a2_setPreset(days) {
+    const to = new Date();
+    const from = new Date();
+    if (days === 'month') {
+        from.setDate(1);
+    } else {
+        from.setDate(to.getDate() - Number(days));
+    }
+    const fromEl = document.getElementById('a2-date-from');
+    const toEl   = document.getElementById('a2-date-to');
+    if (fromEl) fromEl.value = from.toISOString().slice(0,10);
+    if (toEl)   toEl.value   = to.toISOString().slice(0,10);
+    a2_refresh();
+}
+
+function a2_refresh() {
+    a2_renderOverview();
+    a2_renderTrend();
+    a2_renderS1();
+    a2_renderStats();
+    a2_renderAnomalies();
+    a2_renderComparison();
+}
+
+function a2_showTab(tab, btn) {
+    document.querySelectorAll('#mod-analytics2 .a2-tab-pane').forEach(p=>p.classList.remove('active'));
+    document.querySelectorAll('#mod-analytics2 .a2-tab-btn').forEach(b=>b.classList.remove('active'));
+    const pane = document.getElementById('a2-tab-'+tab);
+    if (pane) pane.classList.add('active');
+    if (btn)  btn.classList.add('active');
+    // lazy-render on tab switch
+    if (tab==='trends')     { a2_renderTrend(); a2_renderS1(); }
+    if (tab==='comparison') a2_renderComparison();
+    if (tab==='statistics') a2_renderStats();
+    if (tab==='anomalies')  a2_renderAnomalies();
+}
+
+// ── Fleet Overview ────────────────────────────────────────────
+
+function a2_renderOverview() {
+    const data    = a2_filteredData();
+    const allData = a2_getData();
+    const devices = a2_getDevices(allData);
+    const today   = new Date().toISOString().slice(0,10);
+
+    // KPI counts
+    const todayRows = data.filter(r=>{
+        const d = parseDateObj?parseDateObj(r.time):null;
+        const rDate = d || new Date(r.timestamp||r.Timestamp||0);
+        return rDate.toISOString().slice(0,10)===today;
+    });
+
+    // PASS rate (where QC column exists)
+    const withQC  = data.filter(r=>r.qcStatus||r.Qc_Status||r.qc_status);
+    const passQC  = withQC.filter(r=>{
+        const s = (r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase();
+        return s==='PASS'||s==='1';
+    });
+    const passRate = withQC.length ? Math.round(passQC.length/withQC.length*100) : null;
+
+    // Anomaly count
+    const anomalies = a2_detectAnomalies(data, 2.5);
+
+    // Completeness avg
+    let compTotal=0, compCount=0;
+    if (Array.isArray(cols)) {
+        cols.forEach(c=>{
+            const st = a2_calcStats(data, c.k);
+            if (st && data.length>0) { compTotal+=st.completeness; compCount++; }
+        });
+    }
+    const avgComp = compCount>0 ? Math.round(compTotal/compCount) : null;
+
+    // Last sync
+    const lastRow = [...data].sort((a,b)=>{
+        const da = parseDateObj?parseDateObj(a.time):null, db2=parseDateObj?parseDateObj(b.time):null;
+        return (db2||new Date(b.timestamp||0)) - (da||new Date(a.timestamp||0));
+    })[0];
+    const lastDate = lastRow ? (parseDateObj?parseDateObj(lastRow.time):null)||new Date(lastRow.timestamp||0) : null;
+
+    // Update KPIs
+    const _set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+    _set('a2-kpi-total',      devices.length);
+    _set('a2-kpi-pass',       passRate!==null ? passRate+'%' : '—');
+    _set('a2-kpi-today',      todayRows.length);
+    _set('a2-kpi-anomaly',    anomalies.length);
+    _set('a2-kpi-completeness', avgComp!==null ? avgComp+'%' : '—');
+    _set('a2-kpi-sync',       lastDate ? lastDate.toLocaleDateString() : '—');
+
+    // Alert banner
+    const banner = document.getElementById('a2-alert-banner');
+    const alertText = document.getElementById('a2-alert-text');
+    if (banner && alertText) {
+        if (anomalies.length > 0) {
+            alertText.textContent = `${anomalies.length} anomaly(s) detected — check Anomalies tab for details`;
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+
+    // Device health cards
+    const grid = document.getElementById('a2-device-grid');
+    if (!grid) return;
+    if (!devices.length) {
+        grid.innerHTML = '<div class="a2-empty-state"><div class="a2-es-icon">📡</div>No devices found in data range</div>';
+        return;
+    }
+
+    grid.innerHTML = '';
+    devices.forEach(did => {
+        const devRows = data.filter(r=>(r.did||r.device_id||r.deviceId||'')==did);
+
+        // Determine QC status from latest row
+        const latest = [...devRows].sort((a,b)=>{
+            const da=parseDateObj?parseDateObj(a.time):null, db2=parseDateObj?parseDateObj(b.time):null;
+            return (db2||new Date(b.timestamp||0))-(da||new Date(a.timestamp||0));
+        })[0];
+        const latestQC = latest ? (latest.qcStatus||latest.Qc_Status||latest.qc_status||'') : '';
+        const qcUpper  = latestQC.toString().toUpperCase();
+        let statusClass='status-unknown', badgeClass='badge-unknown', badgeLabel='UNKNOWN';
+        if (qcUpper==='PASS'||qcUpper==='1') { statusClass='status-pass'; badgeClass='badge-pass'; badgeLabel='PASS'; }
+        else if (qcUpper==='FAIL'||qcUpper==='0') { statusClass='status-fail'; badgeClass='badge-fail'; badgeLabel='FAIL'; }
+
+        const lastTestDate = latest ? ((parseDateObj?parseDateObj(latest.time):null)||new Date(latest.timestamp||0)).toLocaleDateString() : 'No data';
+
+        // Mini sparkline (last 10 ammonium abs values)
+        const sparkVals = devRows.slice(-10).map(r=>a2_colVal(r,'ammonium')).filter(isFinite);
+        const sparkMax  = sparkVals.length ? Math.max(...sparkVals) : 1;
+        const sparkBars = sparkVals.map(v=>{
+            const h = Math.max(3, Math.round((v/sparkMax)*28));
+            return `<div class="a2-dc-bar" style="height:${h}px;"></div>`;
+        }).join('');
+
+        const card = document.createElement('div');
+        card.className = `a2-device-card ${statusClass}`;
+        card.title = `Click to filter to device: ${did}`;
+        card.onclick = () => {
+            const sel=document.getElementById('a2-device'); if(sel){sel.value=did;} a2_refresh();
+        };
+        card.innerHTML = `
+            <div class="a2-dc-header">
+                <span class="a2-dc-id">${a2_escHtml(did)}</span>
+                <span class="a2-dc-badge ${badgeClass}">${badgeLabel}</span>
+            </div>
+            <div class="a2-dc-meta">Last test: ${lastTestDate} &nbsp;·&nbsp; ${devRows.length} records</div>
+            <div class="a2-dc-sparkline-row" title="Ammonium-N trend (last 10)">${sparkBars||'<span style="color:#e2e8f0;font-size:0.75rem;">No data</span>'}</div>
+        `;
+        grid.appendChild(card);
+    });
+}
+
+// ── Trends ───────────────────────────────────────────────────
+
+function a2_getSelectedParams() {
+    const pills = document.querySelectorAll('#a2-param-pills input:checked');
+    return Array.from(pills).map(cb=>cb.value).filter(Boolean);
+}
+
+function a2_renderTrend() {
+    const ctx = document.getElementById('a2-c-trend');
+    if (!ctx) return;
+    a2_destroyChart('trend');
+
+    const data = a2_filteredData();
+    const params = a2_getSelectedParams();
+    if (!data.length || !params.length) {
+        const tCtx = ctx.getContext('2d');
+        tCtx.clearRect(0,0,ctx.width,ctx.height);
+        return;
+    }
+
+    // Sort by date
+    const sorted = [...data].sort((a,b)=>{
+        const da = parseDateObj?parseDateObj(a.time):new Date(a.timestamp||0);
+        const db = parseDateObj?parseDateObj(b.time):new Date(b.timestamp||0);
+        return (da||0)-(db||0);
+    });
+    const labels = sorted.map(r=>{
+        const d = parseDateObj?parseDateObj(r.time):new Date(r.timestamp||0);
+        return d ? d.toLocaleDateString() : '';
+    });
+
+    const palette = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#ef4444','#64748b','#f97316','#06b6d4'];
+    const datasets = params.map((key,i)=>{
+        const col = (Array.isArray(cols)?cols:[]).find(c=>c.k===key);
+        return {
+            label: col ? col.n : key,
+            data:  sorted.map(r=>{ const v=a2_colVal(r,key); return isFinite(v)?v:null; }),
+            borderColor: palette[i%palette.length],
+            backgroundColor: palette[i%palette.length]+'22',
+            tension: 0.3,
+            fill: false,
+            spanGaps: true,
+            pointRadius: sorted.length>60 ? 0 : 3,
+        };
+    });
+
+    // Threshold bands (optional)
+    const showThresh = document.getElementById('a2-show-thresholds')?.checked;
+    if (showThresh) {
+        params.forEach((key,i)=>{
+            const th = typeof getEffectiveThreshold==='function' ? getEffectiveThreshold(key) : PARAMETER_THRESHOLDS?.[key];
+            if (!th||!th.optimal) return;
+            datasets.push({
+                label: ((Array.isArray(cols)?cols:[]).find(c=>c.k===key)?.n||key)+' Opt. Max',
+                data: sorted.map(()=>th.optimal[1]),
+                borderColor: palette[i%palette.length]+'77',
+                borderDash: [4,4],
+                pointRadius: 0,
+                fill: false,
+                spanGaps: true,
+            });
+        });
+    }
+
+    try {
+        a2ChartObjs.trend = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top' },
+                    zoom: {
+                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                        pan:  { enabled: true, mode: 'x' }
+                    }
+                },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 12, maxRotation: 30 } }
+                }
+            }
+        });
+    } catch(e) { console.warn('a2_renderTrend Chart.js error:', e); }
+}
+
+function a2_renderS1() {
+    const ctx = document.getElementById('a2-c-s1');
+    if (!ctx) return;
+    a2_destroyChart('s1');
+    const data = a2_filteredData();
+    if (!data.length) return;
+
+    const s1Keys = ['ammonium','phosphorus','oc','potassium','iron','copper'].filter(k=>(Array.isArray(cols)?cols:[]).find(c=>c.k===k));
+    const sorted = [...data].sort((a,b)=>{
+        const da=parseDateObj?parseDateObj(a.time):new Date(a.timestamp||0);
+        const db=parseDateObj?parseDateObj(b.time):new Date(b.timestamp||0);
+        return (da||0)-(db||0);
+    });
+    const labels = sorted.map(r=>{
+        const d=parseDateObj?parseDateObj(r.time):new Date(r.timestamp||0);
+        return d?d.toLocaleDateString():'';
+    });
+    const palette=['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#ef4444'];
+    const datasets = s1Keys.map((key,i)=>({
+        label: (Array.isArray(cols)?cols:[]).find(c=>c.k===key)?.n||key,
+        data: sorted.map(r=>{ const v=a2_colVal(r,key); return isFinite(v)?v:null; }),
+        borderColor: palette[i%palette.length],
+        backgroundColor: 'transparent',
+        tension: 0.3,
+        fill: false,
+        spanGaps: true,
+        pointRadius: sorted.length>60 ? 0 : 2,
+    }));
+
+    try {
+        a2ChartObjs.s1 = new Chart(ctx,{
+            type:'line', data:{labels, datasets},
+            options:{ responsive:true, maintainAspectRatio:true,
+                plugins:{ legend:{position:'top'} },
+                scales:{ x:{ ticks:{maxTicksLimit:10, maxRotation:30} } }
+            }
+        });
+    } catch(e) { console.warn('a2_renderS1 error:',e); }
+}
+
+// ── Comparison ───────────────────────────────────────────────
+
+function a2_renderComparison() {
+    const grid = document.getElementById('a2-compare-grid');
+    if (!grid) return;
+
+    const selOpts = Array.from(document.getElementById('a2-cmp-devices')?.selectedOptions||[]);
+    const selDevices = selOpts.map(o=>o.value).filter(Boolean);
+    const paramKey  = document.getElementById('a2-cmp-param')?.value || (cols[0]?.k||'ammonium');
+    const paramLabel= (Array.isArray(cols)?cols:[]).find(c=>c.k===paramKey)?.n || paramKey;
+
+    if (!selDevices.length) {
+        grid.innerHTML = '<div class="a2-empty-state"><div class="a2-es-icon">🔄</div>Select at least one device above to compare</div>';
+        a2_destroyChart('bar');
+        return;
+    }
+
+    const allFiltered = a2_filteredData();
+    const palette = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#14b8a6'];
+
+    // Compute stats per device
+    const deviceStats = selDevices.map((did,i)=>{
+        const devData = allFiltered.filter(r=>(r.did||r.device_id||r.deviceId||'')==did);
+        const st = a2_calcStats(devData, paramKey);
+        return { did, st, color: palette[i%palette.length] };
+    });
+
+    // Fleet average
+    const allVals = deviceStats.flatMap(ds=>ds.st?ds.st.vals:[]);
+    const fleetMean = allVals.length ? allVals.reduce((a,b)=>a+b,0)/allVals.length : 0;
+
+    // Render cards
+    grid.innerHTML = '';
+    const maxMean = Math.max(...deviceStats.map(ds=>ds.st?ds.st.mean:0), 0.001);
+
+    deviceStats.forEach(({did, st, color}) => {
+        const card = document.createElement('div');
+        card.className = 'a2-cmp-card';
+        if (!st) {
+            card.innerHTML = `<strong style="color:#1e293b">${a2_escHtml(did)}</strong><div style="color:#94a3b8;margin-top:8px;">No data</div>`;
+            grid.appendChild(card); return;
+        }
+        const deltaVal = st.mean - fleetMean;
+        const deltaClass = deltaVal>=0 ? 'a2-delta-pos' : 'a2-delta-neg';
+        const deltaStr = (deltaVal>=0?'+':'')+deltaVal.toFixed(3);
+        const barPct = Math.round(st.mean/maxMean*100);
+        const hbClass = st.completeness>=80?'hb-good':st.completeness>=50?'hb-medium':'hb-poor';
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-weight:700;color:#1e293b;">${a2_escHtml(did)}</span>
+                <span style="font-size:0.75rem;background:${color}22;color:${color};padding:2px 8px;border-radius:999px;">${paramLabel}</span>
+            </div>
+            <div style="font-size:1.5rem;font-weight:700;color:#1e293b;">${st.mean.toFixed(4)}</div>
+            <div style="font-size:0.75rem;color:#64748b;margin-bottom:6px;">avg &nbsp;·&nbsp; <span class="${deltaClass}">${deltaStr}</span> vs fleet</div>
+            <div class="a2-cmp-bar-wrap"><div class="a2-cmp-bar" style="width:${barPct}%;background:${color};"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:0.74rem;color:#94a3b8;margin-top:4px;">
+                <span>Min: ${st.min.toFixed(4)}</span><span>Max: ${st.max.toFixed(4)}</span><span>σ: ${st.std.toFixed(4)}</span>
+            </div>
+            <div style="margin-top:8px;">
+                <div style="font-size:0.74rem;color:#94a3b8;margin-bottom:2px;">Completeness: ${st.completeness}%</div>
+                <div class="a2-health-bar-wrap" style="width:100%"><div class="a2-health-bar ${hbClass}" style="width:${st.completeness}%"></div></div>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+
+    // Bar chart
+    const barCtx = document.getElementById('a2-c-bar');
+    if (barCtx) {
+        a2_destroyChart('bar');
+        const validStats = deviceStats.filter(ds=>ds.st);
+        if (validStats.length) {
+            try {
+                a2ChartObjs.bar = new Chart(barCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: validStats.map(ds=>ds.did),
+                        datasets: [{
+                            label: paramLabel + ' (Mean)',
+                            data: validStats.map(ds=>ds.st.mean),
+                            backgroundColor: validStats.map(ds=>ds.color+'cc'),
+                            borderColor:     validStats.map(ds=>ds.color),
+                            borderWidth: 2,
+                        }]
+                    },
+                    options: {
+                        responsive:true, maintainAspectRatio:true,
+                        plugins:{ legend:{display:false} },
+                        scales:{ y:{ beginAtZero:false } }
+                    }
+                });
+            } catch(e) { console.warn('a2_renderComparison bar error:',e); }
+        }
+    }
+}
+
+// ── Statistics ───────────────────────────────────────────────
+
+function a2_renderStats() {
+    const tbody = document.getElementById('a2-stats-tbody');
+    if (!tbody) return;
+    const data = a2_filteredData();
+    const colList = Array.isArray(cols) ? cols : [];
+    tbody.innerHTML = '';
+
+    if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="a2-empty-state">No data in selected range</td></tr>';
+        a2_destroyChart('dist'); return;
+    }
+
+    const distLabels=[], distMeans=[], distErrors=[];
+    colList.forEach(c => {
+        const st = a2_calcStats(data, c.k);
+        if (!st) {
+            tbody.innerHTML += `<tr><td>${a2_escHtml(c.n)}</td><td colspan="7" style="color:#94a3b8">No data</td></tr>`;
+            return;
+        }
+        const hbClass = st.completeness>=80?'hb-good':st.completeness>=50?'hb-medium':'hb-poor';
+        distLabels.push(c.n); distMeans.push(st.mean); distErrors.push(st.std);
+        tbody.innerHTML += `
+            <tr>
+                <td>${a2_escHtml(c.n)}</td>
+                <td>${st.n}</td>
+                <td>${st.mean.toFixed(4)}</td>
+                <td>${st.std.toFixed(4)}</td>
+                <td>${st.min.toFixed(4)}</td>
+                <td>${st.max.toFixed(4)}</td>
+                <td>${st.completeness}%</td>
+                <td><div class="a2-health-bar-wrap"><div class="a2-health-bar ${hbClass}" style="width:${st.completeness}%"></div></div></td>
+            </tr>`;
+    });
+
+    // Distribution chart (horizontal bar approximation)
+    const distCtx = document.getElementById('a2-c-dist');
+    if (distCtx && distLabels.length) {
+        a2_destroyChart('dist');
+        try {
+            a2ChartObjs.dist = new Chart(distCtx, {
+                type: 'bar',
+                data: {
+                    labels: distLabels,
+                    datasets: [{
+                        label: 'Mean',
+                        data: distMeans,
+                        backgroundColor: '#3b82f688',
+                        borderColor: '#2563eb',
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx2)=>`Mean: ${ctx2.raw?.toFixed(4)} ± ${distErrors[ctx2.dataIndex]?.toFixed(4)} (σ)`
+                            }
+                        }
+                    },
+                    scales: { x:{ beginAtZero:false } }
+                }
+            });
+        } catch(e) { console.warn('a2_renderStats dist error:',e); }
+    }
+}
+
+// ── Anomalies ─────────────────────────────────────────────────
+
+function a2_detectAnomalies(data, threshold) {
+    const thresh = threshold || parseFloat(document.getElementById('a2-zscore-thresh')?.value||'2.5');
+    const anomalies = [];
+    const colList = Array.isArray(cols) ? cols : [];
+    colList.forEach(c => {
+        const st = a2_calcStats(data, c.k);
+        if (!st || st.std===0 || st.n<3) return;
+        data.forEach(row => {
+            const v = a2_colVal(row, c.k);
+            if (!isFinite(v)) return;
+            const z = Math.abs((v - st.mean) / st.std);
+            if (z >= thresh) {
+                const d = parseDateObj?parseDateObj(row.time):new Date(row.timestamp||0);
+                anomalies.push({
+                    param: c.n, key: c.k, value: v, mean: st.mean, std: st.std, z,
+                    device: row.did||row.device_id||row.deviceId||'—',
+                    date: d ? d.toLocaleDateString() : '—',
+                    testId: row.tid||row.test_id||row.testId||'—',
+                });
+            }
+        });
+    });
+    return anomalies.sort((a,b)=>b.z-a.z);
+}
+
+function a2_renderAnomalies() {
+    const list = document.getElementById('a2-anomaly-list');
+    if (!list) return;
+    const data = a2_filteredData();
+    const anomalies = a2_detectAnomalies(data);
+
+    if (!anomalies.length) {
+        list.innerHTML = '<div class="a2-empty-state"><div class="a2-es-icon">✅</div>No anomalies detected in selected range</div>';
+        return;
+    }
+
+    list.innerHTML = anomalies.slice(0,50).map(an=>`
+        <div class="a2-anomaly-item">
+            <div class="a2-ai-left">
+                <span class="a2-ai-param">${a2_escHtml(an.param)}</span>
+                <span class="a2-ai-meta">Device: ${a2_escHtml(an.device)} &nbsp;·&nbsp; Date: ${a2_escHtml(an.date)} &nbsp;·&nbsp; Test: ${a2_escHtml(an.testId)}</span>
+                <span class="a2-ai-meta">Mean: ${an.mean.toFixed(4)} &nbsp;·&nbsp; σ: ${an.std.toFixed(4)}</span>
+            </div>
+            <div class="a2-ai-val" title="Z-score: ${an.z.toFixed(2)}">${an.value.toFixed(4)}<br><span style="font-size:0.7rem;font-weight:400;color:#ef4444">Z=${an.z.toFixed(2)}</span></div>
+        </div>
+    `).join('');
+}
+
+// ── Exports ───────────────────────────────────────────────────
+
+function a2_exportCSV() {
+    const data = a2_filteredData();
+    if (!data.length) { alert('No data to export.'); return; }
+    const colList = Array.isArray(cols) ? cols : [];
+    const header = ['Device','TestID','Date',...colList.map(c=>c.n)].join(',');
+    const rows = data.map(r=>{
+        const d = parseDateObj?parseDateObj(r.time):new Date(r.timestamp||0);
+        const vals = colList.map(c=>{ const v=a2_colVal(r,c.k); return isFinite(v)?v:''; });
+        return [r.did||r.device_id||'', r.tid||r.test_id||'', d?d.toLocaleDateString():'', ...vals].join(',');
+    });
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='analytics2_export.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
+
+function a2_exportExcel() {
+    if (typeof XLSX === 'undefined') { alert('Excel export requires XLSX library. Falling back to CSV.'); a2_exportCSV(); return; }
+    const data = a2_filteredData();
+    if (!data.length) { alert('No data to export.'); return; }
+    const colList = Array.isArray(cols) ? cols : [];
+    const wsData = [['Device','TestID','Date',...colList.map(c=>c.n)]];
+    data.forEach(r=>{
+        const d = parseDateObj?parseDateObj(r.time):new Date(r.timestamp||0);
+        wsData.push([r.did||r.device_id||'', r.tid||r.test_id||'', d?d.toLocaleDateString():'', ...colList.map(c=>{ const v=a2_colVal(r,c.k); return isFinite(v)?v:''; })]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,'Analytics2',ws);
+    XLSX.writeFile(wb,'analytics2_export.xlsx');
+}
+
+function a2_exportStatsCSV() {
+    const data = a2_filteredData();
+    const colList = Array.isArray(cols) ? cols : [];
+    const rows = colList.map(c=>{
+        const st = a2_calcStats(data,c.k);
+        if (!st) return [c.n,'','','','','',''];
+        return [c.n, st.n, st.mean.toFixed(6), st.std.toFixed(6), st.min.toFixed(6), st.max.toFixed(6), st.completeness+'%'];
+    });
+    const csv = ['Parameter,Count,Mean,StdDev,Min,Max,Completeness',...rows.map(r=>r.join(','))].join('\n');
+    const blob = new Blob([csv],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='analytics2_stats.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ============ END Analytics-2 Module ============
+
 
 //---------------- Device module starts -------------------
 
