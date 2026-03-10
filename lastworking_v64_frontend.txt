@@ -3950,6 +3950,51 @@
     }
     .a2-empty-state .a2-es-icon { font-size: 2.5rem; margin-bottom: 8px; }
 
+    /* QC Analysis Tab */
+    .a2-qc-summary-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;
+    }
+    .a2-qc-stat-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 14px 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .a2-qc-stat-card .a2-qsc-label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+    .a2-qc-stat-card .a2-qsc-value { font-size: 1.8rem; font-weight: 700; line-height:1; }
+    .a2-qc-pass-val   { color: #16a34a; }
+    .a2-qc-fail-val   { color: #dc2626; }
+    .a2-qc-unknown-val{ color: #d97706; }
+    .a2-qc-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; margin-bottom: 16px; }
+    .a2-qc-table th { background: #f1f5f9; padding: 7px 10px; text-align: left; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+    .a2-qc-table td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+    .a2-qc-table tr:hover td { background: #f8fafc; }
+    .a2-qc-badge-pass    { display:inline-block; padding:1px 8px; border-radius:999px; font-size:0.72rem; font-weight:600; background:#dcfce7; color:#15803d; }
+    .a2-qc-badge-fail    { display:inline-block; padding:1px 8px; border-radius:999px; font-size:0.72rem; font-weight:600; background:#fee2e2; color:#b91c1c; }
+    .a2-qc-badge-unknown { display:inline-block; padding:1px 8px; border-radius:999px; font-size:0.72rem; font-weight:600; background:#fef9c3; color:#b45309; }
+    /* Parameter Health Tab */
+    .a2-ph-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;
+    }
+    .a2-ph-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .a2-ph-card .a2-ph-name { font-weight: 700; font-size: 0.9rem; color: #1e293b; margin-bottom: 8px; display:flex; justify-content:space-between; align-items:center; }
+    .a2-ph-band { height: 12px; border-radius: 6px; margin: 8px 0 4px; position:relative; overflow:hidden; }
+    .a2-ph-band-fill { height:100%; border-radius:6px; }
+    .a2-ph-stats { display:flex; gap:12px; font-size:0.76rem; color:#64748b; margin-top:4px; flex-wrap:wrap; }
+    .a2-ph-trend { font-size:0.78rem; color:#475569; margin-top:6px; }
+    .a2-ph-badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:0.72rem; font-weight:600; }
+    .a2-ph-badge-good    { background:#dcfce7; color:#15803d; }
+    .a2-ph-badge-warning { background:#fef9c3; color:#b45309; }
+    .a2-ph-badge-low     { background:#fee2e2; color:#b91c1c; }
+    .a2-ph-badge-nodata  { background:#f1f5f9; color:#94a3b8; }
+    /* Comparison trend overlay */
+    .a2-cmp-trend-section { margin-top: 16px; }
+    /* Anomaly severity */
+    .a2-severity-high   { border-left-color: #dc2626 !important; }
+    .a2-severity-medium { border-left-color: #d97706 !important; }
+    .a2-severity-low    { border-left-color: #3b82f6 !important; }
+
     /* ============ END Analytics-2 Styles ============ */
 
     /* Analytics Enhancements - Statistical Summary */
@@ -9430,12 +9475,22 @@
         <input type="date" id="a2-date-from" class="date-input" onchange="a2_onDateChange()">
         <span style="font-size:0.8em;color:#94a3b8;">to</span>
         <input type="date" id="a2-date-to"   class="date-input" onchange="a2_onDateChange()">
-        <button class="btn btn-outline" onclick="a2_setPreset(7)">7 Days</button>
-        <button class="btn btn-outline" onclick="a2_setPreset(30)">30 Days</button>
+        <button class="btn btn-outline" onclick="a2_setPreset(7)">7d</button>
+        <button class="btn btn-outline" onclick="a2_setPreset(30)">30d</button>
+        <button class="btn btn-outline" onclick="a2_setPreset(90)">90d</button>
         <button class="btn btn-outline" onclick="a2_setPreset('month')">This Month</button>
+        <button class="btn btn-outline" onclick="a2_setPreset('all')">All Time</button>
+        <label style="font-size:0.85rem;font-weight:500;">QC:</label>
+        <select id="a2-qc-filter" onchange="a2_refresh()" style="min-width:100px;border:1px solid #cbd5e1;border-radius:6px;padding:3px 8px;font-size:0.83rem;">
+          <option value="">All</option>
+          <option value="PASS">PASS only</option>
+          <option value="FAIL">FAIL only</option>
+          <option value="UNKNOWN">UNKNOWN</option>
+        </select>
         <button class="btn btn-blue"    onclick="a2_refresh()">🔄 Refresh</button>
         <button class="btn btn-outline" onclick="a2_exportCSV()">💾 CSV</button>
         <button class="btn btn-outline" onclick="a2_exportExcel()">📊 Excel</button>
+        <button class="btn btn-outline" onclick="a2_exportPDF()">🖨 PDF</button>
       </div>
 
       <!-- 5-Tab Bar -->
@@ -9445,6 +9500,8 @@
         <button class="a2-tab-btn"        onclick="a2_showTab('comparison',this)">🔄 Comparison</button>
         <button class="a2-tab-btn"        onclick="a2_showTab('statistics',this)">📊 Statistics</button>
         <button class="a2-tab-btn"        onclick="a2_showTab('anomalies',this)">🚨 Anomalies</button>
+        <button class="a2-tab-btn"        onclick="a2_showTab('qc',this)">✅ QC Analysis</button>
+        <button class="a2-tab-btn"        onclick="a2_showTab('paramhealth',this)">🌿 Param Health</button>
       </div>
 
       <!-- ── TAB: Fleet Overview ── -->
@@ -9541,13 +9598,22 @@
           </div>
           <canvas id="a2-c-bar" style="max-height:280px;"></canvas>
         </div>
+        <div class="a2-chart-card a2-cmp-trend-section">
+          <div class="a2-cc-title">Multi-Device Trend Overlay
+            <button class="btn btn-sm btn-slate" onclick="a2_downloadChart('a2-c-cmptrend')">⬇ PNG</button>
+          </div>
+          <canvas id="a2-c-cmptrend" style="max-height:280px;"></canvas>
+        </div>
       </div>
 
       <!-- ── TAB: Statistics ── -->
       <div id="a2-tab-statistics" class="a2-tab-pane">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <h3 style="margin:0;font-size:0.95rem;font-weight:700;color:#475569;">Parameter Statistical Summary</h3>
-          <button class="btn btn-outline" onclick="a2_exportStatsCSV()">💾 Export Stats CSV</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-outline" onclick="a2_copyStatsTable()">📋 Copy Table</button>
+            <button class="btn btn-outline" onclick="a2_exportStatsCSV()">💾 Export Stats CSV</button>
+          </div>
         </div>
         <div style="overflow-x:auto;">
           <table class="a2-stats-table">
@@ -9558,6 +9624,9 @@
                 <th>Mean</th>
                 <th>Std Dev</th>
                 <th>Min</th>
+                <th>Q1</th>
+                <th>Median</th>
+                <th>Q3</th>
                 <th>Max</th>
                 <th>Completeness</th>
                 <th>Health</th>
@@ -9576,16 +9645,66 @@
 
       <!-- ── TAB: Anomalies ── -->
       <div id="a2-tab-anomalies" class="a2-tab-pane">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
           <h3 style="margin:0;font-size:0.95rem;font-weight:700;color:#475569;">🚨 Statistical Anomaly Detection</h3>
-          <label style="font-size:0.82rem;display:flex;align-items:center;gap:6px;">
-            Z-score threshold:
-            <input type="number" id="a2-zscore-thresh" value="2.5" step="0.1" min="1" max="5"
-              style="width:60px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:0.82rem;"
-              onchange="a2_renderAnomalies()">
-          </label>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <label style="font-size:0.82rem;display:flex;align-items:center;gap:6px;">
+              Z-score threshold:
+              <input type="number" id="a2-zscore-thresh" value="2.5" step="0.1" min="1" max="5"
+                style="width:60px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:0.82rem;"
+                onchange="a2_renderAnomalies()">
+            </label>
+            <button class="btn btn-outline" onclick="a2_exportAnomalyCSV()">💾 Export Anomalies</button>
+          </div>
         </div>
         <div id="a2-anomaly-list" class="a2-anomaly-list"></div>
+      </div>
+
+      <!-- ── TAB: QC Analysis ── -->
+      <div id="a2-tab-qc" class="a2-tab-pane">
+        <h3 style="margin:0 0 12px;font-size:0.95rem;font-weight:700;color:#475569;">✅ QC Status Analysis</h3>
+        <div class="a2-qc-summary-grid" id="a2-qc-summary"></div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+          <div class="a2-chart-card" style="flex:1 1 300px;">
+            <div class="a2-cc-title">QC Status Distribution
+              <button class="btn btn-sm btn-slate" onclick="a2_downloadChart('a2-c-qcpie')">⬇ PNG</button>
+            </div>
+            <canvas id="a2-c-qcpie" style="max-height:260px;"></canvas>
+          </div>
+          <div class="a2-chart-card" style="flex:1 1 400px;">
+            <div class="a2-cc-title">QC Pass Rate Over Time
+              <button class="btn btn-sm btn-slate" onclick="a2_downloadChart('a2-c-qctrend')">⬇ PNG</button>
+            </div>
+            <canvas id="a2-c-qctrend" style="max-height:260px;"></canvas>
+          </div>
+        </div>
+        <h3 style="margin:16px 0 10px;font-size:0.9rem;font-weight:700;color:#475569;">Per-Device QC Summary</h3>
+        <div style="overflow-x:auto;">
+          <table class="a2-qc-table" id="a2-qc-device-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Total Tests</th>
+                <th>PASS</th>
+                <th>FAIL</th>
+                <th>UNKNOWN</th>
+                <th>PASS Rate</th>
+                <th>Last Test</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="a2-qc-device-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── TAB: Parameter Health ── -->
+      <div id="a2-tab-paramhealth" class="a2-tab-pane">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <h3 style="margin:0;font-size:0.95rem;font-weight:700;color:#475569;">🌿 Parameter Health Overview</h3>
+          <span style="font-size:0.8rem;color:#94a3b8;">Shows data distribution relative to typical reference ranges</span>
+        </div>
+        <div id="a2-ph-grid" class="a2-ph-grid"></div>
       </div>
 
     </div><!-- end mod-analytics2 -->
@@ -27785,7 +27904,7 @@ function getSelectedAnalyticsParams() {
 //  Analytics-2 Module  (a2_ prefix — parallel to Analytics)
 // ============================================================
 
-const a2ChartObjs = { trend: null, s1: null, bar: null, dist: null };
+const a2ChartObjs = { trend: null, s1: null, bar: null, dist: null, qcpie: null, qctrend: null, cmptrend: null };
 let   a2UpdateTimer = null;
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -27799,6 +27918,7 @@ function a2_filteredData() {
     const devSel   = document.getElementById('a2-device')?.value || '';
     const fromVal  = document.getElementById('a2-date-from')?.value;
     const toVal    = document.getElementById('a2-date-to')?.value;
+    const qcFilter = document.getElementById('a2-qc-filter')?.value || '';
     const fromDate = fromVal ? new Date(fromVal) : new Date('1900-01-01');
     const toDate   = toVal   ? new Date(toVal)   : new Date('2100-12-31');
     toDate.setHours(23,59,59);
@@ -27810,6 +27930,13 @@ function a2_filteredData() {
         if (devSel) {
             const rid = row.did || row.device_id || row.deviceId || '';
             if (rid !== devSel) return false;
+        }
+        if (qcFilter) {
+            const qc = (row.qcStatus||row.Qc_Status||row.qc_status||'').toString().toUpperCase();
+            const want = qcFilter.toUpperCase();
+            if (want === 'PASS'    && !(qc==='PASS'||qc==='1')) return false;
+            if (want === 'FAIL'    && !(qc==='FAIL'||qc==='0')) return false;
+            if (want === 'UNKNOWN' && (qc==='PASS'||qc==='1'||qc==='FAIL'||qc==='0')) return false;
         }
         return true;
     });
@@ -27841,7 +27968,12 @@ function a2_calcStats(data, key) {
     const sorted = [...vals].sort((a,b)=>a-b);
     const min = sorted[0], max = sorted[n-1];
     const completeness = data.length > 0 ? Math.round(n/data.length*100) : 0;
-    return { n, mean, std, min, max, completeness, vals, sorted };
+    const _q = p => {
+        const pos = p*(n-1), lo=Math.floor(pos), hi=Math.ceil(pos);
+        return lo===hi ? sorted[lo] : sorted[lo]+(sorted[hi]-sorted[lo])*(pos-lo);
+    };
+    const q1=_q(0.25), median=_q(0.5), q3=_q(0.75);
+    return { n, mean, std, min, max, q1, median, q3, completeness, vals, sorted };
 }
 
 function a2_escHtml(s) {
@@ -27929,6 +28061,8 @@ function a2_setPreset(days) {
     const from = new Date();
     if (days === 'month') {
         from.setDate(1);
+    } else if (days === 'all') {
+        from.setFullYear(2000, 0, 1);
     } else {
         from.setDate(to.getDate() - Number(days));
     }
@@ -27941,11 +28075,14 @@ function a2_setPreset(days) {
 
 function a2_refresh() {
     a2_renderOverview();
-    a2_renderTrend();
-    a2_renderS1();
-    a2_renderStats();
-    a2_renderAnomalies();
-    a2_renderComparison();
+    // Only render active tab to avoid heavy re-renders
+    const activeTab = document.querySelector('#mod-analytics2 .a2-tab-pane.active')?.id?.replace('a2-tab-','') || 'overview';
+    if (activeTab==='trends')     { a2_renderTrend(); a2_renderS1(); }
+    if (activeTab==='comparison') a2_renderComparison();
+    if (activeTab==='statistics') a2_renderStats();
+    if (activeTab==='anomalies')  a2_renderAnomalies();
+    if (activeTab==='qc')         a2_renderQC();
+    if (activeTab==='paramhealth')a2_renderParamHealth();
 }
 
 function a2_showTab(tab, btn) {
@@ -27954,11 +28091,12 @@ function a2_showTab(tab, btn) {
     const pane = document.getElementById('a2-tab-'+tab);
     if (pane) pane.classList.add('active');
     if (btn)  btn.classList.add('active');
-    // lazy-render on tab switch
     if (tab==='trends')     { a2_renderTrend(); a2_renderS1(); }
     if (tab==='comparison') a2_renderComparison();
     if (tab==='statistics') a2_renderStats();
     if (tab==='anomalies')  a2_renderAnomalies();
+    if (tab==='qc')         a2_renderQC();
+    if (tab==='paramhealth')a2_renderParamHealth();
 }
 
 // ── Fleet Overview ────────────────────────────────────────────
@@ -28050,8 +28188,9 @@ function a2_renderOverview() {
 
         const lastTestDate = latest ? ((parseDateObj?parseDateObj(latest.time):null)||new Date(latest.timestamp||0)).toLocaleDateString() : 'No data';
 
-        // Mini sparkline (last 10 ammonium abs values)
-        const sparkVals = devRows.slice(-10).map(r=>a2_colVal(r,'ammonium')).filter(isFinite);
+        // Mini sparkline (last 10 values for first available param)
+        const sparkParam = (Array.isArray(cols) && cols.length) ? cols[0].k : 'ammonium';
+        const sparkVals = devRows.slice(-10).map(r=>a2_colVal(r,sparkParam)).filter(isFinite);
         const sparkMax  = sparkVals.length ? Math.max(...sparkVals) : 1;
         const sparkBars = sparkVals.map(v=>{
             const h = Math.max(3, Math.round((v/sparkMax)*28));
@@ -28296,6 +28435,49 @@ function a2_renderComparison() {
             } catch(e) { console.warn('a2_renderComparison bar error:',e); }
         }
     }
+
+    // Multi-device trend overlay chart
+    const cmpTrendCtx = document.getElementById('a2-c-cmptrend');
+    if (cmpTrendCtx && selDevices.length) {
+        a2_destroyChart('cmptrend');
+        const allFiltered2 = a2_filteredData();
+        const palette2 = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#14b8a6'];
+        const allRows = selDevices.flatMap(did=>allFiltered2.filter(r=>(r.did||r.device_id||r.deviceId||'')==did));
+        const allDates = [...new Set(allRows.map(r=>{ const d=parseDateObj?parseDateObj(r.time):new Date(r.timestamp||0); return d?d.toLocaleDateString():''; }))].sort();
+        const cmpDatasets = selDevices.map((did,i)=>{
+            const devData = allFiltered2.filter(r=>(r.did||r.device_id||r.deviceId||'')==did);
+            const sorted = [...devData].sort((a,b)=>{
+                const da=parseDateObj?parseDateObj(a.time):new Date(a.timestamp||0);
+                const db=parseDateObj?parseDateObj(b.time):new Date(b.timestamp||0);
+                return (da||0)-(db||0);
+            });
+            return {
+                label: did,
+                data: allDates.map(dl=>{
+                    const match = sorted.find(r=>{ const d=parseDateObj?parseDateObj(r.time):new Date(r.timestamp||0); return d&&d.toLocaleDateString()===dl; });
+                    if (!match) return null;
+                    const v = a2_colVal(match, paramKey);
+                    return isFinite(v) ? v : null;
+                }),
+                borderColor: palette2[i%palette2.length],
+                backgroundColor: 'transparent',
+                tension: 0.3, fill: false, spanGaps: true,
+                pointRadius: allDates.length > 60 ? 0 : 3,
+            };
+        });
+        try {
+            a2ChartObjs.cmptrend = new Chart(cmpTrendCtx, {
+                type: 'line',
+                data: { labels: allDates, datasets: cmpDatasets },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { position: 'top' }, title: { display: true, text: `${paramLabel} — Multi-Device Trend` } },
+                    scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 30 } } }
+                }
+            });
+        } catch(e) { console.warn('a2_renderComparison trend error:',e); }
+    }
 }
 
 // ── Statistics ───────────────────────────────────────────────
@@ -28308,7 +28490,7 @@ function a2_renderStats() {
     tbody.innerHTML = '';
 
     if (!data.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="a2-empty-state">No data in selected range</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="a2-empty-state">No data in selected range</td></tr>';
         a2_destroyChart('dist'); return;
     }
 
@@ -28316,7 +28498,7 @@ function a2_renderStats() {
     colList.forEach(c => {
         const st = a2_calcStats(data, c.k);
         if (!st) {
-            tbody.innerHTML += `<tr><td>${a2_escHtml(c.n)}</td><td colspan="7" style="color:#94a3b8">No data</td></tr>`;
+            tbody.innerHTML += `<tr><td>${a2_escHtml(c.n)}</td><td colspan="10" style="color:#94a3b8">No data</td></tr>`;
             return;
         }
         const hbClass = st.completeness>=80?'hb-good':st.completeness>=50?'hb-medium':'hb-poor';
@@ -28328,6 +28510,9 @@ function a2_renderStats() {
                 <td>${st.mean.toFixed(4)}</td>
                 <td>${st.std.toFixed(4)}</td>
                 <td>${st.min.toFixed(4)}</td>
+                <td>${st.q1.toFixed(4)}</td>
+                <td>${st.median.toFixed(4)}</td>
+                <td>${st.q3.toFixed(4)}</td>
                 <td>${st.max.toFixed(4)}</td>
                 <td>${st.completeness}%</td>
                 <td><div class="a2-health-bar-wrap"><div class="a2-health-bar ${hbClass}" style="width:${st.completeness}%"></div></div></td>
@@ -28466,6 +28651,268 @@ function a2_exportStatsCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href=url; a.download='analytics2_stats.csv'; a.click();
     URL.revokeObjectURL(url);
+}
+
+
+// ── QC Analysis ───────────────────────────────────────────────────
+
+function a2_renderQC() {
+    const data    = a2_filteredData();
+    const allData = a2_getData();
+    const devices = a2_getDevices(allData);
+
+    // Compute QC stats
+    const withQC  = allData.filter(r=>r.qcStatus||r.Qc_Status||r.qc_status);
+    const pass    = withQC.filter(r=>{ const s=(r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase(); return s==='PASS'||s==='1'; });
+    const fail    = withQC.filter(r=>{ const s=(r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase(); return s==='FAIL'||s==='0'; });
+    const unknown = withQC.filter(r=>{ const s=(r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase(); return s!=='PASS'&&s!=='1'&&s!=='FAIL'&&s!=='0'; });
+
+    // QC summary cards
+    const summaryDiv = document.getElementById('a2-qc-summary');
+    if (summaryDiv) {
+        const pRate = withQC.length ? Math.round(pass.length/withQC.length*100) : 0;
+        summaryDiv.innerHTML = `
+            <div class="a2-qc-stat-card"><div class="a2-qsc-label">Total Tests (with QC)</div><div class="a2-qsc-value" style="color:#1e293b">${withQC.length}</div></div>
+            <div class="a2-qc-stat-card"><div class="a2-qsc-label">✅ PASS</div><div class="a2-qsc-value a2-qc-pass-val">${pass.length}</div></div>
+            <div class="a2-qc-stat-card"><div class="a2-qsc-label">❌ FAIL</div><div class="a2-qsc-value a2-qc-fail-val">${fail.length}</div></div>
+            <div class="a2-qc-stat-card"><div class="a2-qsc-label">⚠️ UNKNOWN</div><div class="a2-qsc-value a2-qc-unknown-val">${unknown.length}</div></div>
+            <div class="a2-qc-stat-card"><div class="a2-qsc-label">PASS Rate</div><div class="a2-qsc-value a2-qc-pass-val">${pRate}%</div></div>
+        `;
+    }
+
+    // Pie chart
+    const pieCtx = document.getElementById('a2-c-qcpie');
+    if (pieCtx) {
+        a2_destroyChart('qcpie');
+        if (withQC.length) {
+            try {
+                a2ChartObjs.qcpie = new Chart(pieCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['PASS','FAIL','UNKNOWN'],
+                        datasets: [{ data: [pass.length, fail.length, unknown.length],
+                            backgroundColor: ['#16a34a','#dc2626','#d97706'],
+                            hoverOffset: 6 }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: true,
+                        plugins: { legend: { position: 'bottom' } }
+                    }
+                });
+            } catch(e) { console.warn('a2_renderQC pie error:',e); }
+        } else {
+            const tCtx = pieCtx.getContext('2d'); if (tCtx) tCtx.clearRect(0,0,pieCtx.width,pieCtx.height);
+        }
+    }
+
+    // QC trend over time (daily pass rate)
+    const trendCtx = document.getElementById('a2-c-qctrend');
+    if (trendCtx) {
+        a2_destroyChart('qctrend');
+        if (withQC.length > 1) {
+            const dayMap = new Map();
+            withQC.forEach(r=>{
+                const d = parseDateObj?parseDateObj(r.time):new Date(r.timestamp||0);
+                const dk = d ? d.toISOString().slice(0,10) : '?';
+                if (!dayMap.has(dk)) dayMap.set(dk, {pass:0,total:0});
+                dayMap.get(dk).total++;
+                const s=(r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase();
+                if (s==='PASS'||s==='1') dayMap.get(dk).pass++;
+            });
+            const sortedDays = [...dayMap.keys()].sort();
+            const trendLabels = sortedDays.map(d=>new Date(d).toLocaleDateString());
+            const trendData   = sortedDays.map(d=>{ const {pass,total}=dayMap.get(d); return total?Math.round(pass/total*100):0; });
+            try {
+                a2ChartObjs.qctrend = new Chart(trendCtx, {
+                    type: 'line',
+                    data: { labels: trendLabels, datasets: [{
+                        label: 'Daily PASS Rate (%)',
+                        data: trendData,
+                        borderColor: '#16a34a', backgroundColor: '#16a34a22',
+                        fill: true, tension: 0.3, spanGaps: true,
+                        pointRadius: trendLabels.length > 60 ? 0 : 3,
+                    }]},
+                    options: {
+                        responsive: true, maintainAspectRatio: true,
+                        scales: { y: { min:0, max:100, ticks:{ callback: v=>v+'%' } }, x:{ ticks:{maxTicksLimit:12,maxRotation:30} } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            } catch(e) { console.warn('a2_renderQC trend error:',e); }
+        }
+    }
+
+    // Per-device QC table
+    const tbody = document.getElementById('a2-qc-device-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!devices.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="a2-empty-state">No device data</td></tr>';
+        return;
+    }
+    devices.forEach(did=>{
+        const devRows = allData.filter(r=>(r.did||r.device_id||r.deviceId||'')==did);
+        const devQC   = devRows.filter(r=>r.qcStatus||r.Qc_Status||r.qc_status);
+        const devPass = devQC.filter(r=>{ const s=(r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase(); return s==='PASS'||s==='1'; });
+        const devFail = devQC.filter(r=>{ const s=(r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase(); return s==='FAIL'||s==='0'; });
+        const devUnk  = devQC.filter(r=>{ const s=(r.qcStatus||r.Qc_Status||r.qc_status||'').toString().toUpperCase(); return s!=='PASS'&&s!=='1'&&s!=='FAIL'&&s!=='0'; });
+        const pRate   = devQC.length ? Math.round(devPass.length/devQC.length*100) : null;
+        const latest  = [...devRows].sort((a,b)=>{
+            const da=parseDateObj?parseDateObj(a.time):null, db2=parseDateObj?parseDateObj(b.time):null;
+            return (db2||new Date(b.timestamp||0))-(da||new Date(a.timestamp||0));
+        })[0];
+        const lastDate = latest ? ((parseDateObj?parseDateObj(latest.time):null)||new Date(latest.timestamp||0)).toLocaleDateString() : '—';
+        const latestQC = latest ? (latest.qcStatus||latest.Qc_Status||latest.qc_status||'') : '';
+        const qcUpper  = latestQC.toString().toUpperCase();
+        let statusBadge='<span class="a2-qc-badge-unknown">UNKNOWN</span>';
+        if (qcUpper==='PASS'||qcUpper==='1') statusBadge='<span class="a2-qc-badge-pass">PASS</span>';
+        else if (qcUpper==='FAIL'||qcUpper==='0') statusBadge='<span class="a2-qc-badge-fail">FAIL</span>';
+        tbody.innerHTML += `<tr>
+            <td>${a2_escHtml(did)}</td>
+            <td>${devRows.length}</td>
+            <td style="color:#16a34a;font-weight:600">${devPass.length}</td>
+            <td style="color:#dc2626;font-weight:600">${devFail.length}</td>
+            <td style="color:#d97706">${devUnk.length}</td>
+            <td>${pRate!==null ? pRate+'%' : '—'}</td>
+            <td>${lastDate}</td>
+            <td>${statusBadge}</td>
+        </tr>`;
+    });
+}
+
+// ── Parameter Health ──────────────────────────────────────────
+
+function a2_renderParamHealth() {
+    const grid = document.getElementById('a2-ph-grid');
+    if (!grid) return;
+    const data = a2_filteredData();
+    const colList = Array.isArray(cols) ? cols : [];
+
+    if (!data.length) {
+        grid.innerHTML = '<div class="a2-empty-state"><div class="a2-es-icon">📊</div>No data in selected range</div>';
+        return;
+    }
+
+    grid.innerHTML = '';
+    const palette = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#ef4444','#64748b'];
+    colList.forEach((c, idx) => {
+        const st = a2_calcStats(data, c.k);
+        if (!st) {
+            const card = document.createElement('div');
+            card.className = 'a2-ph-card';
+            card.innerHTML = `<div class="a2-ph-name">${a2_escHtml(c.n)} <span class="a2-ph-badge a2-ph-badge-nodata">No Data</span></div>`;
+            grid.appendChild(card); return;
+        }
+
+        // Trend direction (compare first half vs second half)
+        const half = Math.floor(st.sorted.length/2);
+        const firstHalfMean = half>0 ? st.vals.slice(0,half).reduce((a,b)=>a+b,0)/half : st.mean;
+        const secondHalfMean = half>0 ? st.vals.slice(-half).reduce((a,b)=>a+b,0)/half : st.mean;
+        const trendIcon = secondHalfMean > firstHalfMean*1.05 ? '📈' : secondHalfMean < firstHalfMean*0.95 ? '📉' : '➡️';
+        const trendLabel = secondHalfMean > firstHalfMean*1.05 ? 'Rising' : secondHalfMean < firstHalfMean*0.95 ? 'Falling' : 'Stable';
+
+        // Health assessment
+        const cv = st.std / (Math.abs(st.mean)||1);
+        let badgeClass = 'a2-ph-badge-good', badgeLabel = 'Stable';
+        if (cv > 0.5) { badgeClass = 'a2-ph-badge-warning'; badgeLabel = 'Variable'; }
+        if (cv > 1.0) { badgeClass = 'a2-ph-badge-low'; badgeLabel = 'High CV'; }
+        if (st.completeness < 50) { badgeClass = 'a2-ph-badge-low'; badgeLabel = 'Sparse Data'; }
+
+        // Distribution bar (min to max, shaded mean ± std)
+        const range = (st.max - st.min) || 1;
+        const meanPct = Math.round((st.mean-st.min)/range*100);
+        const stdPct  = Math.round(st.std/range*100);
+        const color   = palette[idx%palette.length];
+
+        const card = document.createElement('div');
+        card.className = 'a2-ph-card';
+        card.innerHTML = `
+            <div class="a2-ph-name">
+                ${a2_escHtml(c.n)}
+                <span class="a2-ph-badge ${badgeClass}">${badgeLabel}</span>
+            </div>
+            <div style="position:relative;height:12px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin:8px 0 4px;">
+                <div style="position:absolute;left:${Math.max(0,meanPct-stdPct/2)}%;width:${Math.min(100-Math.max(0,meanPct-stdPct/2), stdPct||4)}%;height:100%;background:${color}44;"></div>
+                <div style="position:absolute;left:${Math.max(0,Math.min(98,meanPct))}%;width:3px;height:100%;background:${color};border-radius:2px;"></div>
+            </div>
+            <div class="a2-ph-stats">
+                <span title="Minimum">Min: <strong>${st.min.toFixed(4)}</strong></span>
+                <span title="Mean">Mean: <strong style="color:${color}">${st.mean.toFixed(4)}</strong></span>
+                <span title="Maximum">Max: <strong>${st.max.toFixed(4)}</strong></span>
+                <span title="Standard deviation">σ: <strong>${st.std.toFixed(4)}</strong></span>
+                <span title="Coefficient of variation">CV: <strong>${(cv*100).toFixed(0)}%</strong></span>
+                <span title="Number of readings">N: <strong>${st.n}</strong></span>
+            </div>
+            <div class="a2-ph-trend">${trendIcon} <strong>${trendLabel}</strong> &nbsp;·&nbsp; Completeness: <strong>${st.completeness}%</strong>
+              <div class="a2-health-bar-wrap" style="margin-left:6px;vertical-align:middle;width:60px;display:inline-block;"><div class="a2-health-bar ${st.completeness>=80?'hb-good':st.completeness>=50?'hb-medium':'hb-poor'}" style="width:${st.completeness}%"></div></div>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+}
+
+// ── Export helpers ────────────────────────────────────────────
+
+function a2_exportAnomalyCSV() {
+    const data = a2_filteredData();
+    const anomalies = a2_detectAnomalies(data);
+    if (!anomalies.length) { alert('No anomalies detected in current range.'); return; }
+    const header = 'Parameter,Device,Date,TestID,Value,Mean,StdDev,Z-Score';
+    const rows = anomalies.map(an=>[an.param, an.device, an.date, an.testId, an.value.toFixed(6), an.mean.toFixed(6), an.std.toFixed(6), an.z.toFixed(3)].join(','));
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob([csv],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='analytics2_anomalies.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
+
+function a2_copyStatsTable() {
+    const tbody = document.getElementById('a2-stats-tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const headers = 'Parameter\tCount\tMean\tStd Dev\tMin\tQ1\tMedian\tQ3\tMax\tCompleteness';
+    const tsv = [headers, ...rows.map(tr=>Array.from(tr.querySelectorAll('td')).slice(0,-1).map(td=>td.textContent.trim()).join('\t'))].join('\n');
+    navigator.clipboard.writeText(tsv).then(()=>{
+        const btn = document.querySelector('#mod-analytics2 button[onclick="a2_copyStatsTable()"]');
+        if (btn) { const orig=btn.textContent; btn.textContent='✅ Copied!'; setTimeout(()=>{btn.textContent=orig;},2000); }
+    }).catch(()=>alert('Copy failed. Please copy manually.'));
+}
+
+function a2_exportPDF() {
+    if (typeof jsPDF === 'undefined' && typeof window.jspdf === 'undefined') {
+        alert('PDF export: jsPDF not loaded. Using print dialog instead.');
+        window.print(); return;
+    }
+    const { jsPDF: JSPDF } = window.jspdf || { jsPDF };
+    const doc = new JSPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const data = a2_filteredData();
+    const colList = Array.isArray(cols) ? cols : [];
+    const fromVal = document.getElementById('a2-date-from')?.value || '';
+    const toVal   = document.getElementById('a2-date-to')?.value || '';
+    const devSel  = document.getElementById('a2-device')?.value || 'All Devices';
+
+    doc.setFontSize(16); doc.setFont('helvetica','bold');
+    doc.text('Insoil Analytics-2 Report', 14, 16);
+    doc.setFontSize(9); doc.setFont('helvetica','normal');
+    doc.text(`Device: ${devSel}   Date Range: ${fromVal} to ${toVal}   Generated: ${new Date().toLocaleString()}`, 14, 23);
+    doc.text(`Total Records: ${data.length}`, 14, 28);
+
+    // Stats table
+    doc.setFontSize(11); doc.setFont('helvetica','bold');
+    doc.text('Parameter Statistics', 14, 36);
+    const tableHead = [['Parameter','N','Mean','Std Dev','Min','Median','Max','Completeness']];
+    const tableBody = colList.map(c=>{
+        const st = a2_calcStats(data,c.k);
+        if (!st) return [c.n,'—','—','—','—','—','—','—'];
+        return [c.n, st.n, st.mean.toFixed(4), st.std.toFixed(4), st.min.toFixed(4), st.median.toFixed(4), st.max.toFixed(4), st.completeness+'%'];
+    });
+    if (typeof doc.autoTable === 'function') {
+        doc.autoTable({ head: tableHead, body: tableBody, startY: 40, styles:{ fontSize:8 }, headStyles:{ fillColor:[37,99,235] } });
+    } else {
+        doc.setFontSize(8);
+        tableBody.forEach((row,i)=>{ doc.text(row.join('  |  '), 14, 45+i*5); });
+    }
+    doc.save('analytics2_report.pdf');
 }
 
 // ============ END Analytics-2 Module ============
