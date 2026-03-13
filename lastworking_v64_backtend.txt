@@ -219,6 +219,16 @@ function getDataByHeaders(ss, sheetName, headers) {
 // Must ALWAYS return an object (never null)
 // ============================================================================
 
+/**
+ * clearInitialDataCache — evicts the initialData:v1 ScriptCache entry.
+ * Called by the "Reload DB" button in the Results/Database toolbar so
+ * the very next getInitialData() call rebuilds from live sheets.
+ */
+function clearInitialDataCache() {
+  CacheService.getScriptCache().remove('initialData:v1');
+  return { ok: true };
+}
+
 function getInitialData() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'initialData:v1';
@@ -455,7 +465,9 @@ function findHeaderIndex_(headers, candidates) {
 }
 
 function normalizeHeader_(value) {
-  return String(value || '').trim().toLowerCase().replace(/[\s_.-]/g, '');
+  // Strip ALL non-alphanumeric characters so headers like 'pH (-)', 'EC (dS/m)', 'Avail. N'
+  // all normalize correctly (e.g. 'pH (-)' → 'ph', 'EC (dS/m)' → 'ecdsm').
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function addMissingSheet_(missingSheetsArr, sheetName) {
@@ -610,7 +622,11 @@ function getSTVDirectData() {
   }
   ensureSTVDirectSheet_(ss);
   stvDirectLog_('getSTVDirectData reading sheet', { sheet: STV_DIRECT_SHEET });
-  const rows = readSheetAsObjects(ss, STV_DIRECT_SHEET);
+  // Filter out blank rows that remain when a user clears cell content without deleting the rows
+  // (cleared rows have all-empty values but getLastRow() still includes them)
+  const rows = readSheetAsObjects(ss, STV_DIRECT_SHEET).filter(row =>
+    String(row.Test_ID ?? '').trim() !== '' || String(row.ClientID ?? '').trim() !== ''
+  );
   stvDirectLog_('getSTVDirectData rows loaded', { count: rows.length });
   return { status: 'OK', rows: rows };
 }
@@ -662,12 +678,27 @@ function srvr_ImportSTVDirectCSV(payload) {
     return { addedCount: 0, errorCount: missing.length, errors: [`Missing headers: ${missing.join(', ')}`] };
   }
 
+  // Read the ACTUAL sheet header row so CSV columns are mapped to the correct sheet column
+  // positions — not the assumed STV_DIRECT_HEADERS order (which may differ when the sheet
+  // was created by an older backend version or has custom columns).
+  const sheetActualLastCol = Math.max(sheet.getLastColumn(), STV_DIRECT_HEADERS.length);
+  const shHeaderRow = sheet.getRange(1, 1, 1, sheetActualLastCol).getValues()[0].map(h => String(h || '').trim());
+
   const rows = [];
+  const numericHeaders = ['pH', 'EC', 'OC', 'Avail_N', 'Avail_P', 'Avail_K', 'Avail_S', 'Zn', 'Fe', 'Mn', 'Cu', 'B'];
+  const dataWarnings = [];
   for (let i = 1; i < parsed.length; i++) {
     const row = parsed[i];
     if (!row || row.join('').trim() === '') continue;
-    const out = STV_DIRECT_HEADERS.map(h => {
+    // Warn if data row has different column count than header row (indicates unquoted commas in a field)
+    if (row.length !== headerRow.length) {
+      dataWarnings.push(`Row ${i + 1}: ${row.length} columns found, expected ${headerRow.length} — check for unquoted commas in date/text fields.`);
+    }
+    // Build the output row using the ACTUAL sheet header order so each value lands in
+    // the correct sheet column regardless of which version of the sheet the user has.
+    const out = shHeaderRow.map(h => {
       const key = normalizeHeader_(h);
+      if (key === '') return ''; // blank/unknown column — leave empty
       if (key === normalizeHeader_('ClientID')) {
         const idx = headerMap[normalizeHeader_('ClientID')];
         return idx != null ? row[idx] : 'Default';
@@ -680,8 +711,22 @@ function srvr_ImportSTVDirectCSV(payload) {
         const idx = headerMap[normalizeHeader_('Test Date-time')] ?? headerMap[normalizeHeader_('Date')];
         return idx != null ? row[idx] : '';
       }
+      if (key === normalizeHeader_('Date')) {
+        const idx = headerMap[normalizeHeader_('Date')] ?? headerMap[normalizeHeader_('Test Date-time')];
+        return idx != null ? row[idx] : '';
+      }
       const idx = headerMap[key];
       return idx != null ? row[idx] : '';
+    });
+    // Warn if any numeric parameter column has a non-numeric value
+    numericHeaders.forEach(nh => {
+      const nIdx = shHeaderRow.indexOf(nh);
+      const val = nIdx >= 0 ? String(out[nIdx] || '').trim() : '';
+      if (val !== '' && !/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(val)) {
+        const testIdIdx = shHeaderRow.indexOf('Test_ID');
+        const tid = testIdIdx >= 0 ? (out[testIdIdx] || (i + 1)) : (i + 1);
+        dataWarnings.push(`Row ${i + 1} (Test_ID ${tid}): non-numeric value "${val}" in ${nh} column.`);
+      }
     });
     rows.push(out);
   }
@@ -690,8 +735,25 @@ function srvr_ImportSTVDirectCSV(payload) {
     return { addedCount: 0, errorCount: 0 };
   }
 
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, STV_DIRECT_HEADERS.length).setValues(rows);
-  return { addedCount: rows.length, errorCount: 0 };
+  // Find the actual last row that contains data (ignoring blank/cleared rows that may remain
+  // after a user deletes content without deleting the rows themselves)
+  const shLastRow = sheet.getLastRow();
+  let actualLastDataRow = 1; // default: just the header row
+  if (shLastRow > 1) {
+    const firstColVals = sheet.getRange(2, 1, shLastRow - 1, 1).getValues();
+    for (let i = firstColVals.length - 1; i >= 0; i--) {
+      if (String(firstColVals[i][0] ?? '').trim() !== '') {
+        actualLastDataRow = i + 2; // +2: 0-indexed offset + row 1 is header
+        break;
+      }
+    }
+  }
+  sheet.getRange(actualLastDataRow + 1, 1, rows.length, shHeaderRow.length).setValues(rows);
+  const result = { addedCount: rows.length, errorCount: 0 };
+  if (dataWarnings.length) {
+    result.warnings = dataWarnings;
+  }
+  return result;
 }
 
 function ensureSTVDirectSheet_(ss) {
@@ -1859,37 +1921,45 @@ function syncMoveDataToQC(reqRows) {
     const dstLastRow = shDst.getLastRow();
     const dstLastCol = shDst.getLastColumn();
 
+    let dstHdrArray = [];
+    let schemaSynced = false;
     if (dstLastRow < 1 || dstLastCol < 1) {
       shDst.clear();
       shDst.getRange(1, 1, 1, wantCols).setValues([srcHdr]);
       shDst.setFrozenRows(1);
+      dstHdrArray = srcHdr.slice();
+      schemaSynced = true;
     } else {
-      const dstHdrExisting = shDst
+      dstHdrArray = shDst
         .getRange(1, 1, 1, Math.max(dstLastCol, wantCols))
         .getValues()[0]
         .map(h => String(h ?? ""));
 
-      const aligned = (dstHdrExisting.length >= wantCols) &&
-        (dstHdrExisting.slice(0, wantCols).join("|") === srcHdr.join("|"));
+      const aligned = (dstHdrArray.length >= wantCols) &&
+        (dstHdrArray.slice(0, wantCols).join("|") === srcHdr.join("|"));
 
-      // Write canonical header
-      shDst.getRange(1, 1, 1, wantCols).setValues([srcHdr]);
-      shDst.setFrozenRows(1);
+      if (!aligned) {
+        // Schema changed — write new header and pad existing rows
+        shDst.getRange(1, 1, 1, wantCols).setValues([srcHdr]);
+        if (shDst.getFrozenRows() < 1) shDst.setFrozenRows(1);
+        dstHdrArray = srcHdr.slice();
 
-      // If sheet previously had fewer cols, pad existing rows
-      if (!aligned && dstLastRow >= 2) {
-        const oldData = shDst.getRange(2, 1, dstLastRow - 1, dstLastCol).getValues();
-        const padded = oldData.map(r => {
-          const out = r.slice(0, wantCols);
-          while (out.length < wantCols) out.push("");
-          return out;
-        });
-        shDst.getRange(2, 1, padded.length, wantCols).setValues(padded);
+        if (dstLastRow >= 2) {
+          const oldData = shDst.getRange(2, 1, dstLastRow - 1, dstLastCol).getValues();
+          const padded = oldData.map(r => {
+            const out = r.slice(0, wantCols);
+            while (out.length < wantCols) out.push("");
+            return out;
+          });
+          shDst.getRange(2, 1, padded.length, wantCols).setValues(padded);
+        }
+        schemaSynced = true;
       }
+      // else: schema already aligned — reuse dstHdrArray, skip setValues(header) + setFrozenRows (saves API calls)
     }
 
-    const dstVals = shDst.getDataRange().getValues();
-    const dstHdr = dstVals[0].map(h => String(h ?? ""));
+    // Use already-read header data (no extra API call needed)
+    const dstHdr = dstHdrArray;
     const dstIdx = _buildHdrIndex_(dstHdr);
 
     const dDid = dstIdx["device_id"];
@@ -1938,12 +2008,19 @@ function syncMoveDataToQC(reqRows) {
       srcByDidTid.get(k2).push({ rowNum: r + 1, row });
     }
 
-    // Build dst map (existing rowNum)
+    // Build dst map (existing rowNum) — read only minimum columns needed, not all columns
+    const dstCurrentLastRow = schemaSynced ? shDst.getLastRow() : dstLastRow;
     const dstMap = new Map();
-    for (let r = 1; r < dstVals.length; r++) {
-      const row = dstVals[r];
-      const k = key3(row[dDid], row[dTid], row[dDat]);
-      if (k && !dstMap.has(k)) dstMap.set(k, r + 1);
+    if (dstCurrentLastRow >= 2 && dDid != null && dTid != null && dDat != null) {
+      const dataRows = dstCurrentLastRow - 1;
+      const colsToRead = [dDid, dTid, dDat];
+      const maxCol = Math.max(...colsToRead) + 1;
+      const keyBlock = shDst.getRange(2, 1, dataRows, maxCol).getValues();
+      for (let r = 0; r < keyBlock.length; r++) {
+        const row = keyBlock[r];
+        const k = key3(row[dDid], row[dTid], row[dDat]);
+        if (k && !dstMap.has(k)) dstMap.set(k, r + 2); // r is 0-based loop index; +1 for 1-based rows; +1 for header row
+      }
     }
 
     const appends = [];
@@ -1989,28 +2066,34 @@ function syncMoveDataToQC(reqRows) {
       deleteRows.push(hit.rowNum);
     });
 
-    // --- Batch write: apply updates in-memory then flush in one setValues call ---
-    if (updates.length || appends.length) {
-      // Re-read dstVals after schema sync to get current state
-      const currentDstVals = shDst.getDataRange().getValues();
+    // --- Targeted write: append new rows + update only changed rows (no full QC rewrite) ---
+    if (updates.length > 0) {
+      // Write only the updated rows individually (typically rare — same row moved twice)
       updates.forEach(u => {
-        // rowNum is 1-based; index 0 is header row
-        if (u.rowNum - 1 < currentDstVals.length) {
-          currentDstVals[u.rowNum - 1] = u.row;
-        }
+        shDst.getRange(u.rowNum, 1, 1, wantCols).setValues([u.row]);
+        shDst.getRange(u.rowNum, dDat + 1, 1, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
       });
-      appends.forEach(row => currentDstVals.push(row));
-      // Single write for all rows (excluding header already at index 0)
-      if (currentDstVals.length > 1) {
-        shDst.getRange(2, 1, currentDstVals.length - 1, wantCols).setValues(currentDstVals.slice(1));
-      }
+    }
+    if (appends.length > 0) {
+      // Append only the new rows at the bottom — avoids reading+writing all existing QC data
+      const appendStart = shDst.getLastRow() + 1;
+      shDst.getRange(appendStart, 1, appends.length, wantCols).setValues(appends);
+      shDst.getRange(appendStart, dDat + 1, appends.length, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
     }
 
-    // Format Test_date display
-    shDst.getRange(2, dDat + 1, Math.max(0, shDst.getLastRow() - 1), 1).setNumberFormat("yyyy-mm-dd | HH:mm");
-
-    // CUT from RGB_Data (reverse-order delete is correct GAS pattern for non-contiguous rows)
-    deleteRows.sort((a, b) => b - a).forEach(rn => shSrc.deleteRow(rn));
+    // CUT from RGB_Data — batch overwrite (much faster than O(N) deleteRow calls)
+    if (deleteRows.length > 0) {
+      const deleteSet = new Set(deleteRows);
+      // srcVals[0] is the header; srcVals[i] corresponds to sheet row i+1
+      const remainingData = srcVals.slice(1).filter((_, i) => !deleteSet.has(i + 2));
+      const oldDataRows = srcVals.length - 1;
+      if (oldDataRows > 0) {
+        shSrc.getRange(2, 1, oldDataRows, srcHdr.length).clearContent();
+      }
+      if (remainingData.length > 0) {
+        shSrc.getRange(2, 1, remainingData.length, srcHdr.length).setValues(remainingData);
+      }
+    }
 
     return { ok: true, moved, updated, removed: deleteRows.length, skipped };
 
@@ -2180,25 +2263,31 @@ function syncMoveDataToRGB(reqRows) {
       deleteRows.push(hit.rowNum);
     });
 
-    // --- Batch write: apply updates in-memory then flush in one setValues call ---
-    if (updates.length || appends.length) {
-      const currentDstVals = shDst.getDataRange().getValues();
+    // --- Targeted write: append new rows + update only changed rows (no full RGB rewrite) ---
+    if (updates.length > 0) {
       updates.forEach(u => {
-        if (u.rowNum - 1 < currentDstVals.length) {
-          currentDstVals[u.rowNum - 1] = u.row;
-        }
+        shDst.getRange(u.rowNum, 1, 1, wantCols).setValues([u.row]);
+        shDst.getRange(u.rowNum, dDat + 1, 1, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
       });
-      appends.forEach(row => currentDstVals.push(row));
-      if (currentDstVals.length > 1) {
-        shDst.getRange(2, 1, currentDstVals.length - 1, wantCols).setValues(currentDstVals.slice(1));
-      }
+    }
+    if (appends.length > 0) {
+      const appendStart = shDst.getLastRow() + 1;
+      shDst.getRange(appendStart, 1, appends.length, wantCols).setValues(appends);
+      shDst.getRange(appendStart, dDat + 1, appends.length, 1).setNumberFormat("yyyy-mm-dd | HH:mm");
     }
 
-    // Format Test_date display
-    shDst.getRange(2, dDat + 1, Math.max(0, shDst.getLastRow() - 1), 1).setNumberFormat("yyyy-mm-dd | HH:mm");
-
-    // CUT from QC_Data (reverse-order delete is correct GAS pattern for non-contiguous rows)
-    deleteRows.sort((a, b) => b - a).forEach(rn => shSrc.deleteRow(rn));
+    // CUT from QC_Data — batch overwrite (much faster than O(N) deleteRow calls)
+    if (deleteRows.length > 0) {
+      const deleteSet = new Set(deleteRows);
+      const remainingData = srcVals.slice(1).filter((_, i) => !deleteSet.has(i + 2));
+      const oldDataRows = srcVals.length - 1;
+      if (oldDataRows > 0) {
+        shSrc.getRange(2, 1, oldDataRows, srcHdr.length).clearContent();
+      }
+      if (remainingData.length > 0) {
+        shSrc.getRange(2, 1, remainingData.length, srcHdr.length).setValues(remainingData);
+      }
+    }
 
     appendDataAudit_('sync_to_qc', 'QC_Data', moved + updated, 'moved=' + moved + ' updated=' + updated + ' skipped=' + skipped);
     return { ok: true, moved, updated, removed: deleteRows.length, skipped };
@@ -4113,7 +4202,7 @@ function saveServiceHistory(dataObj) {
 // ... (Rest of Savers/Loaders: saveManualEntry, saveToSheet_, etc. - Keep existing) ...
 function saveToSheet_(s, r, h) { const ss = SpreadsheetApp.getActiveSpreadsheet(); let sh = ss.getSheetByName(s); if (!sh) sh = ss.insertSheet(s); if (h) sh.getRange(1, 1, 1, h.length).setValues([h]); if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent(); if (r.length) sh.getRange(2, 1, r.length, r[0].length).setValues(r); }
 
-function saveTestSuccessCriteria(d) { saveToSheet_('Criteria', d.map(o => [o.s, o.p, o.m, o.l, o.rel, o.u, o.re, o.ac]), ['Spectro', 'Parameter', 'Metric', 'L.Limit', 'Relation', 'U.Limit', 'Reason', 'Action']); }
+function saveTestSuccessCriteria(d) { saveToSheet_('Criteria', d.map(o => [o.s, o.p, o.m, o.l, o.rel, o.u, o.re, o.ac]), ['Spectro', 'Parameter', 'Metric', 'L.Limit', 'Relation', 'U.Limit', 'Reason', 'Action']); CacheService.getScriptCache().remove('initialData:v1'); }
 
 function saveSTVEquations(d) {
   saveToSheet_(
@@ -4128,6 +4217,7 @@ function saveSTVEquations(d) {
   // NEW: append-only immutable log
   const run = appendSTVRunLog_(d, version);
 
+  CacheService.getScriptCache().remove('initialData:v1');
   return { status: 'OK', stvVersion: version, stvRunId: run.stvRunId, stvSavedAt: run.stvSavedAt };
 }
 
@@ -4525,7 +4615,7 @@ function upsertSoilTestResult_(rowObj) {
   sh.getRange(targetRow, 1, 1, outRow.length).setValues([outRow]);
 }
 
-function saveBlanks(d) { saveToSheet_('Blanks', d.map(o => [o.p, o.val]), ['Parameter', 'Blank Value']); }
+function saveBlanks(d) { saveToSheet_('Blanks', d.map(o => [o.p, o.val]), ['Parameter', 'Blank Value']); CacheService.getScriptCache().remove('initialData:v1'); }
 function saveDeviceRegistry(d) { saveToSheet_('Device_Registry', d, ['Client', 'Company', 'PAN', 'GSTIN', 'Address', 'Device_ID', 'SIM', 'Aadhaar', 'Mobile', 'MO_Name', 'Installation_Date', 'Place', 'LatLon', 'PIN_code', 'Block', 'District', 'State', 'ProdBatch_ID']); }
 
 function saveServiceTicketWithFile(data) {
@@ -4710,34 +4800,70 @@ function generateServicePdf(payload) {
 // =============================
 // ... User Auth & Admin functions (Keep existing) ...
 function checkLogin(username, password) {
+  // ── Input validation: reject empty or excessively long inputs (DoS guard) ──
+  const u = String(username || '').trim();
+  const p = String(password || '');
+  if (!u || !p) return { success: false, msg: 'Username and password are required.' };
+  if (u.length > 100 || p.length > 200) return { success: false, msg: 'Invalid credentials.' };
+
+  // ── Brute-force protection: max 5 failed attempts per username per 15 min ──
+  // Cache key is a short hex digest of the lowercase username so raw usernames
+  // are never stored in cache keys (privacy-in-depth).
+  const attemptKey = 'BRUTE_' + Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    u.toLowerCase(),
+    Utilities.Charset.UTF_8
+  ).map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('').substring(0, 16);
+
+  const MAX_ATTEMPTS  = 5;
+  const LOCKOUT_SEC   = 900; // 15 minutes
+  const attemptCache  = CacheService.getScriptCache();
+  const attempts      = parseInt(attemptCache.get(attemptKey) || '0', 10);
+
+  if (attempts >= MAX_ATTEMPTS) {
+    return { success: false, msg: 'Too many failed login attempts. Please try again in 15 minutes.' };
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Users');
   // No backdoor credentials — Users sheet must be initialized by an admin.
   if (!sheet) return { success: false, msg: 'System not initialized. Please ask your administrator to create the Users sheet.' };
   const data = sheet.getDataRange().getValues();
-  const inputHash = hashPassword_(password);
+  const inputHash = hashPassword_(p);
   for (let i = 1; i < data.length; i++) {
     const storedCred = String(data[i][2]).trim();
     // Support both hashed and (legacy) plaintext passwords for backward compatibility.
     // Hashed passwords are 64-char hex strings; legacy entries are shorter.
     const storedHash = storedCred.length === 64 ? storedCred : hashPassword_(storedCred);
-    if ((String(data[i][0]).trim() === username || String(data[i][1]).trim() === username) && inputHash === storedHash) {
+    if ((String(data[i][0]).trim() === u || String(data[i][1]).trim() === u) && inputHash === storedHash) {
       // Opportunistically upgrade legacy plaintext to hash on successful login
       if (storedCred.length !== 64) {
         sheet.getRange(i + 1, 3).setValue(inputHash);
+      }
+      // Reset failed-attempt counter on successful login
+      try { attemptCache.remove(attemptKey); } catch (e) {
+        Logger.log('checkLogin: failed to clear brute-force counter: ' + e.message);
       }
       let modules = null;
       if (data[i].length > 5 && data[i][5]) modules = String(data[i][5]).split(',').map(s => s.trim());
       return { success: true, role: data[i][3], user: String(data[i][0]), modules: modules };
     }
   }
-  return { success: false, msg: "Invalid credentials" };
+
+  // Increment failure counter before returning the generic error
+  try { attemptCache.put(attemptKey, String(attempts + 1), LOCKOUT_SEC); } catch (e) {
+    Logger.log('checkLogin: failed to record failed attempt: ' + e.message);
+  }
+  return { success: false, msg: 'Invalid credentials.' };
 }
 
 function adminCreateUser(data) {
   requireAdminRole_();
   if (!data || !data.empId || !data.email || !data.password || !data.role) {
     throw new Error('adminCreateUser: empId, email, password, and role are required.');
+  }
+  if (String(data.password).length < 6) {
+    throw new Error('Password must be at least 6 characters.');
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Users');
@@ -6957,6 +7083,28 @@ function getMistralApiKey_() {
 
 
 function aiQCDiagnoseMistral(payloadJson) {
+  // ── AI rate limiting: max 20 calls per hour per deployment (cost guard) ──
+  // Hourly key so the counter resets automatically each clock-hour.
+  // Note: GAS CacheService does not support atomic increment, so concurrent requests
+  // within the same second may marginally exceed the limit — this is acceptable given
+  // the hourly budget is a cost-control measure, not a hard security boundary.
+  const AI_RATE_KEY     = 'AI_CALLS_' + new Date().toISOString().slice(0, 13);
+  const AI_MAX_PER_HOUR = 20;
+  try {
+    const rateCache = CacheService.getScriptCache();
+    const callCount = parseInt(rateCache.get(AI_RATE_KEY) || '0', 10);
+    if (callCount >= AI_MAX_PER_HOUR) {
+      return {
+        ok: false,
+        message: 'AI diagnostic rate limit reached (' + AI_MAX_PER_HOUR + ' calls/hour). Please try again later.'
+      };
+    }
+    rateCache.put(AI_RATE_KEY, String(callCount + 1), 3600);
+  } catch (e) {
+    // Non-fatal: allow the call to proceed but log so admins notice persistent CacheService outages.
+    Logger.log('aiQCDiagnoseMistral: rate-limit cache unavailable — proceeding without limit: ' + e.message);
+  }
+
   try {
     const parsedInput = safeJsonParse_(payloadJson, {});
     if (!parsedInput.ok) return { ok: false, error: 'Invalid payload JSON: ' + parsedInput.error };
@@ -8153,45 +8301,7 @@ function srvrSetRgbBatchFields(payload) {
   return { ok: true, row: sheetRow, prodBatchId: prodBatchId, qcBatchId: qcBatchId };
 }
 
-/**
- * Master lists source of truth:
- *   - QC_Batch sheet, header: QCBatch_ID
- *   - Prod_Batch sheet, header: ProdBatch_ID
- *
- * Returns:
- *   { qcBatchIds: ['Default', ...], prodBatchIds: ['Default', ...], __status:'OK' }
- */
-function srvr_getMasterLists() {
-  const out = { qcBatchIds: ['Default'], prodBatchIds: ['Default'], __status: 'OK' };
-
-  try {
-    const cache = CacheService.getScriptCache();
-    const cached = cache.get('MASTER_LISTS_V1');
-    if (cached) {
-      const obj = JSON.parse(cached);
-      if (obj && Array.isArray(obj.qcBatchIds) && Array.isArray(obj.prodBatchIds)) return obj;
-    }
-
-    const ss = SpreadsheetApp.getActive();
-    if (!ss) throw new Error('No active spreadsheet');
-
-    out.qcBatchIds = readIdListFromSheet_(ss, 'QC_Batch', 'QCBatch_ID');
-    out.prodBatchIds = readIdListFromSheet_(ss, 'Prod_Batch', 'ProdBatch_ID');
-
-    // ensure Default is present + sorted with Default first
-    out.qcBatchIds = normalizeDefaultFirst_(out.qcBatchIds);
-    out.prodBatchIds = normalizeDefaultFirst_(out.prodBatchIds);
-
-    cache.put('MASTER_LISTS_V1', JSON.stringify(out), 300); // 5 minutes
-    return out;
-
-  } catch (e) {
-    Logger.log('srvr_getMasterLists error: ' + e.message);
-    out.__status = 'ERROR';
-    out.__error = e.message;
-    return out;
-  }
-}
+// srvr_getMasterLists is defined below (after getQCBatchOptions/getProdBatchOptions).
 
 /** Helper: read unique IDs from sheet by header (case-insensitive match) */
 function readIdListFromSheet_(ss, sheetName, headerName) {
@@ -8236,9 +8346,21 @@ function getProdBatchOptions() {
   return (res && Array.isArray(res.prodBatchIds) && res.prodBatchIds.length) ? res.prodBatchIds : ['Default'];
 }
 
+/**
+ * Master lists source of truth:
+ *   - QC_Batch sheet,  header: QCBatch_ID
+ *   - Prod_Batch sheet, header: ProdBatch_ID
+ *
+ * Returns:
+ *   { qcBatchIds: ['Default', ...], prodBatchIds: ['Default', ...], __status: 'OK' }
+ * On error returns the same shape with __status:'ERROR' and __error message so callers
+ * can distinguish network/sheet problems from an empty list.
+ */
 function srvr_getMasterLists() {
   const CACHE_KEY = 'MASTER_LISTS_v1';
-  const CACHE_TTL_SEC = 180; // 3 minutes
+  const CACHE_TTL_SEC = 300; // 5 minutes
+
+  const out = { qcBatchIds: ['Default'], prodBatchIds: ['Default'], __status: 'OK' };
 
   // 1) cache
   try {
@@ -8251,12 +8373,9 @@ function srvr_getMasterLists() {
   } catch (e) { }
 
   // 2) build
-  const out = {
-    qcBatchIds: ['Default'],
-    prodBatchIds: ['Default']
-  };
-
+  try {
   const ss = SpreadsheetApp.getActive();
+  if (!ss) throw new Error('No active spreadsheet');
 
   // QC_Batch
   try {
@@ -8300,6 +8419,13 @@ function srvr_getMasterLists() {
     }
   } catch (e) {
     // keep defaults
+  }
+
+  } catch (e) {
+    Logger.log('srvr_getMasterLists build error: ' + e.message);
+    out.__status = 'ERROR';
+    out.__error = e.message;
+    return out;
   }
 
   // 3) cache
@@ -8710,7 +8836,7 @@ function getLocationInfoForTest_(deviceId, testId) {
  * Update Place, GPS, State for a specific RGB_Data row (Device_ID + Test_ID pair)
  * Also propagates to QC_Data and SoilTest_Results sheets if matching rows exist
  */
-function updateRGBLocationData_(deviceId, testId, place, gps, state) {
+function updateRGBLocationData(deviceId, testId, place, gps, state) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const deviceIdStr = String(deviceId || '').trim();
@@ -8724,43 +8850,191 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
     const gpsStr = String(gps || '').trim();
     const stateStr = String(state || '').trim();
 
-    Logger.log('updateRGBLocationData_: Updating Device_ID=%s Test_ID=%s Place=%s GPS=%s State=%s',
+    Logger.log('updateRGBLocationData: Updating Device_ID=%s Test_ID=%s Place=%s GPS=%s State=%s',
       deviceId, testId, placeStr, gpsStr, stateStr);
 
     let updated = 0;
 
-    // 1. Update RGB_Data sheet
+    // 1. Ensure Place/GPS/State columns exist on all sheets first, then flush
+    //    so subsequent reads within this execution see the new columns immediately.
     const rgbSheet = ss.getSheetByName('RGB_Data');
+    const qcSheet  = ss.getSheetByName('QC_Data');
+    const stSheet  = ss.getSheetByName('SoilTest_Results');
+
+    if (rgbSheet) ensureLocationColumns_(rgbSheet);
+    if (qcSheet)  ensureLocationColumns_(qcSheet);
+    if (stSheet)  ensureLocationColumns_(stSheet);
+    SpreadsheetApp.flush(); // Commit header additions before reading data below
+
+    // 2. Update RGB_Data sheet
     if (rgbSheet) {
       const rgbUpdated = updateSheetLocation_(rgbSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (rgbUpdated) updated++;
     }
 
-    // 2. Propagate to QC_Data sheet (if row exists)
-    const qcSheet = ss.getSheetByName('QC_Data');
+    // 3. Propagate to QC_Data sheet (if row exists there)
     if (qcSheet) {
       const qcUpdated = updateSheetLocation_(qcSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (qcUpdated) updated++;
     }
 
-    // 3. Propagate to SoilTest_Results sheet (if row exists)
-    const stSheet = ss.getSheetByName('SoilTest_Results');
+    // 4. Propagate to SoilTest_Results sheet (if row exists there)
     if (stSheet) {
       const stUpdated = updateSheetLocation_(stSheet, deviceIdStr, testIdStr, placeStr, gpsStr, stateStr);
       if (stUpdated) updated++;
     }
 
-    Logger.log('updateRGBLocationData_: Updated %d sheet(s)', updated);
+    Logger.log('updateRGBLocationData: Updated %d sheet(s)', updated);
     
     return {
       success: true,
       sheetsUpdated: updated,
-      message: `Updated location data in ${updated} sheet(s)`
+      message: 'Updated location data in ' + updated + ' sheet(s)'
     };
 
   } catch (e) {
-    Logger.log('updateRGBLocationData_: Error: %s', e.message);
+    Logger.log('updateRGBLocationData: Error: %s', e.message);
     return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Ensures the sheet has Place, GPS, State columns.
+ * If any are missing they are appended as new columns at the end of the header row.
+ * Safe to call on any sheet — no-ops if all columns already exist.
+ */
+function ensureLocationColumns_(sheet) {
+  if (!sheet) return;
+  try {
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastCol < 1 || lastRow < 1) return;
+
+    // Normalize header for comparison — handles Device_ID, Device ID, DeviceID, etc.
+    const normH = function(h) { return String(h || '').trim().toLowerCase().replace(/[\s_.-]/g, ''); };
+
+    // Detect the header row dynamically (search first 10 rows for Device_ID + Test_ID)
+    const scanRows = Math.min(10, lastRow);
+    const scanData = sheet.getRange(1, 1, scanRows, lastCol).getDisplayValues();
+    let headerRowNum = 1; // 1-based, default to row 1
+    for (let i = 0; i < scanData.length; i++) {
+      let rowStr = scanData[i].map(normH).join(' ');
+      if (rowStr.indexOf('deviceid') >= 0 && rowStr.indexOf('testid') >= 0) {
+        headerRowNum = i + 1; // convert 0-based to 1-based
+        break;
+      }
+    }
+
+    const headers = scanData[headerRowNum - 1]; // 0-based index
+    const normHeaders = headers.map(normH);
+
+    const LOCATION_COLS = { 'place': 'Place', 'gps': 'GPS', 'state': 'State' };
+    let nextCol = lastCol + 1;
+    Object.keys(LOCATION_COLS).forEach(function(key) {
+      if (normHeaders.indexOf(key) === -1) {
+        sheet.getRange(headerRowNum, nextCol).setValue(LOCATION_COLS[key]);
+        nextCol++;
+        Logger.log('ensureLocationColumns_: Added %s column to %s (header row %d)', LOCATION_COLS[key], sheet.getName(), headerRowNum);
+      }
+    });
+  } catch (e) {
+    Logger.log('ensureLocationColumns_ error: %s', e.message);
+  }
+}
+
+/**
+ * Self-registration function for the first-time setup or when the caller is the
+ * script owner but not yet in the Users sheet.
+ *
+ * Rules:
+ *  - If the Users sheet is empty (no data rows) → registers the caller as Admin.
+ *  - If the Users sheet has rows but the caller is not registered → only the script
+ *    owner (effective user / deployer) is allowed to self-register (as Admin).
+ *    Other callers receive an explanatory error message.
+ *  - Already-registered users are not modified.
+ *
+ * This function does NOT call requireRole_() so it is accessible to unregistered callers.
+ * It is safe because only the script owner can elevate themselves; all others are rejected.
+ */
+function registerCurrentUser() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const callerEmail = (Session.getActiveUser().getEmail() || '').toLowerCase().trim();
+    if (!callerEmail) {
+      return { ok: false, error: 'Cannot determine your Google account email. Please sign in.' };
+    }
+
+    // Ensure Users sheet exists
+    let usersSheet = ss.getSheetByName('Users');
+    if (!usersSheet) {
+      usersSheet = ss.insertSheet('Users');
+      usersSheet.appendRow(['Name', 'Email', 'Department', 'Role', 'Status', 'Created']);
+      usersSheet.setFrozenRows(1);
+      Logger.log('registerCurrentUser: Created Users sheet');
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    // data[0] = header row
+    for (var i = 1; i < data.length; i++) {
+      const rowEmail = String(data[i][1] || '').toLowerCase().trim();
+      if (rowEmail === callerEmail) {
+        return { ok: true, already: true, email: callerEmail, role: String(data[i][3] || '') };
+      }
+    }
+
+    // Caller is not registered — determine role
+    const hasAnyUsers = data.length > 1;
+    if (!hasAnyUsers) {
+      // First user ever → grant Admin
+    } else {
+      // Only allow script owner (effective user = deployer) to self-register
+      const ownerEmail = (Session.getEffectiveUser().getEmail() || '').toLowerCase().trim();
+      if (callerEmail !== ownerEmail) {
+        return {
+          ok: false,
+          error: 'Your account (' + callerEmail + ') is not registered. Please ask your administrator to add you to the Users sheet.'
+        };
+      }
+    }
+
+    const now = new Date();
+    const displayName = callerEmail.split('@')[0];
+    usersSheet.appendRow([displayName, callerEmail, 'Operations', 'admin', 'active', now.toISOString()]);
+    Logger.log('registerCurrentUser: Registered %s as admin', callerEmail);
+    return { ok: true, registered: true, email: callerEmail, role: 'admin' };
+
+  } catch (e) {
+    Logger.log('registerCurrentUser error: %s', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Batch-clear Place, GPS, State in RGB_Data for rows moved back from QA/QC to RGB.
+ * Called by moveDataToRGB() after a successful move-back so that the re-imported row
+ * in the RGB module starts with a blank location (user must re-enter Place).
+ * @param {Array<{Device_ID:string, Test_ID:string}>} pairs
+ */
+function clearRGBLocationBatch(pairs) {
+  try {
+    if (!Array.isArray(pairs) || !pairs.length) return { ok: true, cleared: 0 };
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const rgbSheet = ss.getSheetByName('RGB_Data');
+    if (!rgbSheet) return { ok: true, cleared: 0 };
+    let cleared = 0;
+    pairs.forEach(function(p) {
+      const did = String(p.Device_ID || '').trim();
+      const tid = String(p.Test_ID   || '').trim();
+      // Pass empty strings to clear Place, GPS, State fields on the sheet
+      if (did && tid && updateSheetLocation_(rgbSheet, did, tid, /*place*/'', /*gps*/'', /*state*/'')) {
+        cleared++;
+      }
+    });
+    Logger.log('clearRGBLocationBatch: Cleared %d row(s)', cleared);
+    return { ok: true, cleared: cleared };
+  } catch (e) {
+    Logger.log('clearRGBLocationBatch error: %s', e.message);
+    return { ok: false, error: e.message };
   }
 }
 
@@ -8771,47 +9045,68 @@ function updateRGBLocationData_(deviceId, testId, place, gps, state) {
 function updateSheetLocation_(sheet, deviceId, testId, place, gps, state) {
   if (!sheet) return false;
 
-  const data = sheet.getDataRange().getValues();
+  // Use getDisplayValues() so string representations match what getRGBDataFormatted_ returns
+  // (avoids number-vs-string mismatches when Device_ID is stored as a numeric cell)
+  const data = sheet.getDataRange().getDisplayValues();
   if (data.length < 2) return false;
 
-  const headers = data[0];
-  
-  // Find column indices
-  const deviceIdIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'DEVICE_ID');
-  const testIdIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'TEST_ID');
-  const placeIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'PLACE');
-  const gpsIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'GPS');
-  const stateIdx = headers.findIndex(h => String(h).trim().toUpperCase() === 'STATE');
+  // Normalize header for comparison — handles Device_ID, Device ID, DeviceID, etc.
+  const normH = function(h) { return String(h || '').trim().toLowerCase().replace(/[\s_.-]/g, ''); };
+
+  // Detect header row dynamically (same logic as getRGBDataFormatted_)
+  let headerRowIdx = 0; // 0-based, default to first row
+  for (let hi = 0; hi < Math.min(10, data.length); hi++) {
+    let rowStr = data[hi].map(normH).join(' ');
+    if (rowStr.indexOf('deviceid') >= 0 && rowStr.indexOf('testid') >= 0) {
+      headerRowIdx = hi;
+      break;
+    }
+  }
+
+  const headers = data[headerRowIdx];
+
+  // Find column indices with robust normalization
+  const deviceIdIdx = headers.findIndex(function(h) { return normH(h) === 'deviceid'; });
+  const testIdIdx   = headers.findIndex(function(h) { return normH(h) === 'testid'; });
+  const placeIdx    = headers.findIndex(function(h) { return normH(h) === 'place'; });
+  const gpsIdx      = headers.findIndex(function(h) { return normH(h) === 'gps'; });
+  const stateIdx    = headers.findIndex(function(h) { return normH(h) === 'state'; });
 
   if (deviceIdIdx === -1 || testIdIdx === -1) {
     Logger.log('updateSheetLocation_: %s missing Device_ID or Test_ID column', sheet.getName());
     return false;
   }
 
-  // Search for matching row
-  for (let i = 1; i < data.length; i++) {
+  const deviceIdStr = String(deviceId || '').trim();
+  const testIdStr   = String(testId   || '').trim();
+
+  // Search for matching row (start after header row)
+  for (let i = headerRowIdx + 1; i < data.length; i++) {
     const rowDeviceId = String(data[i][deviceIdIdx] || '').trim();
-    const rowTestId = String(data[i][testIdIdx] || '').trim();
+    const rowTestId   = String(data[i][testIdIdx]   || '').trim();
 
-    if (rowDeviceId === deviceId && rowTestId === testId) {
+    if (rowDeviceId && rowDeviceId === deviceIdStr &&
+        rowTestId   && rowTestId   === testIdStr) {
       // Update Place, GPS, State columns if they exist
+      // Note: empty string is a valid value (used to clear the field)
       let cellsUpdated = 0;
-      
-      if (placeIdx !== -1 && place) {
-        sheet.getRange(i + 1, placeIdx + 1).setValue(place);
+      const sheetRowNum = i + 1; // convert 0-based to 1-based
+
+      if (placeIdx !== -1) {
+        sheet.getRange(sheetRowNum, placeIdx + 1).setValue(place);
         cellsUpdated++;
       }
-      if (gpsIdx !== -1 && gps) {
-        sheet.getRange(i + 1, gpsIdx + 1).setValue(gps);
+      if (gpsIdx !== -1) {
+        sheet.getRange(sheetRowNum, gpsIdx + 1).setValue(gps);
         cellsUpdated++;
       }
-      if (stateIdx !== -1 && state) {
-        sheet.getRange(i + 1, stateIdx + 1).setValue(state);
+      if (stateIdx !== -1) {
+        sheet.getRange(sheetRowNum, stateIdx + 1).setValue(state);
         cellsUpdated++;
       }
 
-      Logger.log('updateSheetLocation_: %s - Updated row %d (%d cells)', 
-        sheet.getName(), i + 1, cellsUpdated);
+      Logger.log('updateSheetLocation_: %s - Updated row %d (%d cells)',
+        sheet.getName(), sheetRowNum, cellsUpdated);
       return true;
     }
   }
@@ -9704,4 +9999,148 @@ function diagnoseSoilTestResults_() {
   }
   
   Logger.log('=== Diagnostic Complete ===');
+}
+function srvr_saveInventoryEvidence(requestId, fileName, base64Data) {
+  try {
+    const driveUrl = uploadToDrive(base64Data, fileName, requestId);
+    if (!driveUrl || typeof driveUrl !== 'string') {
+      return { ok: false, error: 'Failed to upload inventory evidence: uploadToDrive returned no URL' };
+    }
+    return { ok: true, url: driveUrl };
+  } catch (e) {
+    return { ok: false, error: 'Failed to upload inventory evidence: ' + e.message };
+  }
+}
+
+// ============================================================
+// QC Manual Override Persistence (Enhancement #10)
+// Saves/clears the QC_Manual_Override column in QC_Data sheet
+// ============================================================
+/**
+ * Persist a manual QC override for one device+test to the QC_Data sheet.
+ * Called from the frontend after toggleQCOverrideMode / applyQCOverride.
+ *
+ * payload = { deviceId, testId, status, enabled }
+ *   status  – 'PASS' | 'FAIL' (ignored when enabled===false)
+ *   enabled – boolean; false means clear the override (write empty string)
+ */
+function saveQCManualOverride(payload) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const deviceIdStr = String((payload && payload.deviceId) || '').trim();
+    const testIdStr   = String((payload && payload.testId)   || '').trim();
+    if (!deviceIdStr || !testIdStr) {
+      return { ok: false, error: 'deviceId and testId are required' };
+    }
+
+    const enabled    = payload.enabled === true || payload.enabled === 'true';
+    const statusStr  = enabled ? String((payload.status || '')).trim().toUpperCase() : '';
+
+    const sheet = ss.getSheetByName('QC_Data');
+    if (!sheet) return { ok: false, error: 'QC_Data sheet not found' };
+
+    // 1. Detect header row
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { ok: false, error: 'QC_Data sheet is empty' };
+
+    const headerRange  = sheet.getRange(1, 1, Math.min(10, lastRow), sheet.getLastColumn());
+    const headerValues = headerRange.getDisplayValues();
+    let headerRowIndex = -1;
+    for (let i = 0; i < headerValues.length; i++) {
+      const rowStr = headerValues[i].join(' ').toLowerCase().replace(/[\s_-]/g, '');
+      if (rowStr.includes('deviceid') && rowStr.includes('testid')) {
+        headerRowIndex = i;
+        break;
+      }
+    }
+    if (headerRowIndex === -1) return { ok: false, error: 'Header row not found in QC_Data' };
+
+    const headerRowNumber = headerRowIndex + 1;
+
+    // 2. Ensure QC_Manual_Override column exists
+    const headers = sheet.getRange(headerRowNumber, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+    const norm = h => String(h || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    let overrideColIndex = headers.findIndex(h => norm(h) === 'qcmanualoverride');
+    if (overrideColIndex < 0) {
+      overrideColIndex = headers.length; // will be next column (0-indexed)
+      sheet.getRange(headerRowNumber, overrideColIndex + 1).setValue('QC_Manual_Override');
+      SpreadsheetApp.flush();
+    }
+    const overrideCol = overrideColIndex + 1; // 1-indexed
+
+    // 3. Find matching row(s) and write override
+    const dataStartRow = headerRowNumber + 1;
+    const numDataRows  = lastRow - dataStartRow + 1;
+    if (numDataRows <= 0) return { ok: false, error: 'No data rows in QC_Data' };
+
+    const idxDid = headers.findIndex(h => norm(h) === 'deviceid');
+    const idxTid = headers.findIndex(h => norm(h) === 'testid');
+    if (idxDid < 0 || idxTid < 0) return { ok: false, error: 'deviceid/testid columns not found' };
+
+    const allRows = sheet.getRange(dataStartRow, 1, numDataRows, sheet.getLastColumn()).getDisplayValues();
+    let updated = 0;
+    for (let r = 0; r < allRows.length; r++) {
+      const rowDid = String(allRows[r][idxDid] || '').trim();
+      const rowTid = String(allRows[r][idxTid] || '').trim();
+      if (rowDid === deviceIdStr && rowTid === testIdStr) {
+        sheet.getRange(dataStartRow + r, overrideCol).setValue(statusStr);
+        updated++;
+        break; // Each deviceId+testId pair is unique in QC_Data — stop after first match
+      }
+    }
+
+    return { ok: true, updated: updated, status: statusStr };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Load all non-empty QC_Manual_Override values from QC_Data sheet.
+ * Returns array of { deviceId, testId, status } objects.
+ */
+function getQCManualOverrides() {
+  try {
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('QC_Data');
+    if (!sheet) return { ok: true, overrides: [] };
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { ok: true, overrides: [] };
+
+    const headerRange  = sheet.getRange(1, 1, Math.min(10, lastRow), sheet.getLastColumn());
+    const headerValues = headerRange.getDisplayValues();
+    let headerRowIndex = -1;
+    for (let i = 0; i < headerValues.length; i++) {
+      const rowStr = headerValues[i].join(' ').toLowerCase().replace(/[\s_-]/g, '');
+      if (rowStr.includes('deviceid') && rowStr.includes('testid')) { headerRowIndex = i; break; }
+    }
+    if (headerRowIndex === -1) return { ok: true, overrides: [] };
+
+    const headerRowNumber = headerRowIndex + 1;
+    const headers = sheet.getRange(headerRowNumber, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+    const norm = h => String(h || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    const idxDid  = headers.findIndex(h => norm(h) === 'deviceid');
+    const idxTid  = headers.findIndex(h => norm(h) === 'testid');
+    const idxOver = headers.findIndex(h => norm(h) === 'qcmanualoverride');
+    if (idxDid < 0 || idxTid < 0 || idxOver < 0) return { ok: true, overrides: [] };
+
+    const dataStartRow = headerRowNumber + 1;
+    const numDataRows  = lastRow - dataStartRow + 1;
+    if (numDataRows <= 0) return { ok: true, overrides: [] };
+
+    const allRows   = sheet.getRange(dataStartRow, 1, numDataRows, headers.length).getDisplayValues();
+    const overrides = [];
+    for (const row of allRows) {
+      const did    = String(row[idxDid]  || '').trim();
+      const tid    = String(row[idxTid]  || '').trim();
+      const status = String(row[idxOver] || '').trim().toUpperCase();
+      if (did && tid && (status === 'PASS' || status === 'FAIL')) {
+        overrides.push({ deviceId: did, testId: tid, status });
+      }
+    }
+    return { ok: true, overrides };
+  } catch (e) {
+    return { ok: false, error: e.message, overrides: [] };
+  }
 }
