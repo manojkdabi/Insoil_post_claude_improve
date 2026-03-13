@@ -622,7 +622,11 @@ function getSTVDirectData() {
   }
   ensureSTVDirectSheet_(ss);
   stvDirectLog_('getSTVDirectData reading sheet', { sheet: STV_DIRECT_SHEET });
-  const rows = readSheetAsObjects(ss, STV_DIRECT_SHEET);
+  // Filter out blank rows that remain when a user clears cell content without deleting the rows
+  // (cleared rows have all-empty values but getLastRow() still includes them)
+  const rows = readSheetAsObjects(ss, STV_DIRECT_SHEET).filter(row =>
+    String(row.Test_ID ?? '').trim() !== '' || String(row.ClientID ?? '').trim() !== ''
+  );
   stvDirectLog_('getSTVDirectData rows loaded', { count: rows.length });
   return { status: 'OK', rows: rows };
 }
@@ -718,7 +722,20 @@ function srvr_ImportSTVDirectCSV(payload) {
     return { addedCount: 0, errorCount: 0 };
   }
 
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, STV_DIRECT_HEADERS.length).setValues(rows);
+  // Find the actual last row that contains data (ignoring blank/cleared rows that may remain
+  // after a user deletes content without deleting the rows themselves)
+  const shLastRow = sheet.getLastRow();
+  let actualLastDataRow = 1; // default: just the header row
+  if (shLastRow > 1) {
+    const firstColVals = sheet.getRange(2, 1, shLastRow - 1, 1).getValues();
+    for (let i = firstColVals.length - 1; i >= 0; i--) {
+      if (String(firstColVals[i][0] ?? '').trim() !== '') {
+        actualLastDataRow = i + 2; // +2: 0-indexed offset + row 1 is header
+        break;
+      }
+    }
+  }
+  sheet.getRange(actualLastDataRow + 1, 1, rows.length, STV_DIRECT_HEADERS.length).setValues(rows);
   const result = { addedCount: rows.length, errorCount: 0 };
   if (dataWarnings.length) {
     result.warnings = dataWarnings;
