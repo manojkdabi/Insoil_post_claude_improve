@@ -678,6 +678,12 @@ function srvr_ImportSTVDirectCSV(payload) {
     return { addedCount: 0, errorCount: missing.length, errors: [`Missing headers: ${missing.join(', ')}`] };
   }
 
+  // Read the ACTUAL sheet header row so CSV columns are mapped to the correct sheet column
+  // positions — not the assumed STV_DIRECT_HEADERS order (which may differ when the sheet
+  // was created by an older backend version or has custom columns).
+  const sheetActualLastCol = Math.max(sheet.getLastColumn(), STV_DIRECT_HEADERS.length);
+  const shHeaderRow = sheet.getRange(1, 1, 1, sheetActualLastCol).getValues()[0].map(h => String(h || '').trim());
+
   const rows = [];
   const numericHeaders = ['pH', 'EC', 'OC', 'Avail_N', 'Avail_P', 'Avail_K', 'Avail_S', 'Zn', 'Fe', 'Mn', 'Cu', 'B'];
   const dataWarnings = [];
@@ -688,8 +694,11 @@ function srvr_ImportSTVDirectCSV(payload) {
     if (row.length !== headerRow.length) {
       dataWarnings.push(`Row ${i + 1}: ${row.length} columns found, expected ${headerRow.length} — check for unquoted commas in date/text fields.`);
     }
-    const out = STV_DIRECT_HEADERS.map(h => {
+    // Build the output row using the ACTUAL sheet header order so each value lands in
+    // the correct sheet column regardless of which version of the sheet the user has.
+    const out = shHeaderRow.map(h => {
       const key = normalizeHeader_(h);
+      if (key === '') return ''; // blank/unknown column — leave empty
       if (key === normalizeHeader_('ClientID')) {
         const idx = headerMap[normalizeHeader_('ClientID')];
         return idx != null ? row[idx] : 'Default';
@@ -702,15 +711,19 @@ function srvr_ImportSTVDirectCSV(payload) {
         const idx = headerMap[normalizeHeader_('Test Date-time')] ?? headerMap[normalizeHeader_('Date')];
         return idx != null ? row[idx] : '';
       }
+      if (key === normalizeHeader_('Date')) {
+        const idx = headerMap[normalizeHeader_('Date')] ?? headerMap[normalizeHeader_('Test Date-time')];
+        return idx != null ? row[idx] : '';
+      }
       const idx = headerMap[key];
       return idx != null ? row[idx] : '';
     });
     // Warn if any numeric parameter column has a non-numeric value
     numericHeaders.forEach(nh => {
-      const nIdx = STV_DIRECT_HEADERS.indexOf(nh);
+      const nIdx = shHeaderRow.indexOf(nh);
       const val = nIdx >= 0 ? String(out[nIdx] || '').trim() : '';
       if (val !== '' && !/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(val)) {
-        const testIdIdx = STV_DIRECT_HEADERS.indexOf('Test_ID');
+        const testIdIdx = shHeaderRow.indexOf('Test_ID');
         const tid = testIdIdx >= 0 ? (out[testIdIdx] || (i + 1)) : (i + 1);
         dataWarnings.push(`Row ${i + 1} (Test_ID ${tid}): non-numeric value "${val}" in ${nh} column.`);
       }
@@ -735,7 +748,7 @@ function srvr_ImportSTVDirectCSV(payload) {
       }
     }
   }
-  sheet.getRange(actualLastDataRow + 1, 1, rows.length, STV_DIRECT_HEADERS.length).setValues(rows);
+  sheet.getRange(actualLastDataRow + 1, 1, rows.length, shHeaderRow.length).setValues(rows);
   const result = { addedCount: rows.length, errorCount: 0 };
   if (dataWarnings.length) {
     result.warnings = dataWarnings;
