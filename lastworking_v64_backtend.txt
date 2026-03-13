@@ -465,7 +465,9 @@ function findHeaderIndex_(headers, candidates) {
 }
 
 function normalizeHeader_(value) {
-  return String(value || '').trim().toLowerCase().replace(/[\s_.-]/g, '');
+  // Strip ALL non-alphanumeric characters so headers like 'pH (-)', 'EC (dS/m)', 'Avail. N'
+  // all normalize correctly (e.g. 'pH (-)' → 'ph', 'EC (dS/m)' → 'ecdsm').
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function addMissingSheet_(missingSheetsArr, sheetName) {
@@ -673,9 +675,15 @@ function srvr_ImportSTVDirectCSV(payload) {
   }
 
   const rows = [];
+  const numericHeaders = ['pH', 'EC', 'OC', 'Avail_N', 'Avail_P', 'Avail_K', 'Avail_S', 'Zn', 'Fe', 'Mn', 'Cu', 'B'];
+  const dataWarnings = [];
   for (let i = 1; i < parsed.length; i++) {
     const row = parsed[i];
     if (!row || row.join('').trim() === '') continue;
+    // Warn if data row has different column count than header row (indicates unquoted commas in a field)
+    if (row.length !== headerRow.length) {
+      dataWarnings.push(`Row ${i + 1}: ${row.length} columns found, expected ${headerRow.length} — check for unquoted commas in date/text fields.`);
+    }
     const out = STV_DIRECT_HEADERS.map(h => {
       const key = normalizeHeader_(h);
       if (key === normalizeHeader_('ClientID')) {
@@ -693,6 +701,16 @@ function srvr_ImportSTVDirectCSV(payload) {
       const idx = headerMap[key];
       return idx != null ? row[idx] : '';
     });
+    // Warn if any numeric parameter column has a non-numeric value
+    numericHeaders.forEach(nh => {
+      const nIdx = STV_DIRECT_HEADERS.indexOf(nh);
+      const val = nIdx >= 0 ? String(out[nIdx] || '').trim() : '';
+      if (val !== '' && !/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(val)) {
+        const testIdIdx = STV_DIRECT_HEADERS.indexOf('Test_ID');
+        const tid = testIdIdx >= 0 ? (out[testIdIdx] || (i + 1)) : (i + 1);
+        dataWarnings.push(`Row ${i + 1} (Test_ID ${tid}): non-numeric value "${val}" in ${nh} column.`);
+      }
+    });
     rows.push(out);
   }
 
@@ -701,7 +719,11 @@ function srvr_ImportSTVDirectCSV(payload) {
   }
 
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, STV_DIRECT_HEADERS.length).setValues(rows);
-  return { addedCount: rows.length, errorCount: 0 };
+  const result = { addedCount: rows.length, errorCount: 0 };
+  if (dataWarnings.length) {
+    result.warnings = dataWarnings;
+  }
+  return result;
 }
 
 function ensureSTVDirectSheet_(ss) {

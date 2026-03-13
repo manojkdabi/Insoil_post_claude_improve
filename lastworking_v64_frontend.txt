@@ -3821,7 +3821,7 @@
     /* ============================================================
        Analytics-2 Module Styles
     ============================================================ */
-    #mod-analytics2 { display: flex; flex-direction: column; height: 100%; }
+    #mod-analytics2 { flex-direction: column; height: 100%; }
     #mod-analytics2 .a2-header {
       display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       padding: 10px 16px; background: var(--bg-surface);
@@ -33070,6 +33070,13 @@ function client_ImportCSV_STVDirect(input) {
             ? `\n${res.errors.join('\n')}`
             : '';
           alert(`Imported ${addedCount} row(s) with ${errorCount} error(s).${details}`);
+        } else {
+          if (statusEl) statusEl.textContent = `Imported ${addedCount} row(s).`;
+        }
+        if (Array.isArray(res && res.warnings) && res.warnings.length) {
+          const msg = `⚠️ Import data quality warnings (${res.warnings.length}):\n\n` + res.warnings.slice(0, 10).join('\n') +
+            (res.warnings.length > 10 ? `\n…and ${res.warnings.length - 10} more.` : '');
+          setTimeout(() => alert(msg), 200);
         }
         refreshSTVDirect();
       })
@@ -33120,6 +33127,14 @@ function renderSTVDirectTable(rows) {
     return;
   }
 
+  // Helper: render a numeric parameter cell — shows value if numeric, ⚠️ if non-numeric data found
+  function _stvNumCell(v) {
+    const s = (v === null || v === undefined) ? '' : String(v).trim();
+    if (s === '') return '';
+    if (!isNaN(parseFloat(s))) return escapeHtml(s);
+    return `<span style="color:#dc2626;font-size:0.8rem;" title="Unexpected value: ${escapeHtml(s)}">⚠️ ${escapeHtml(s)}</span>`;
+  }
+
   tbody.innerHTML = '';
   rows.forEach((row, idx) => {
     const checked = stvDirectSelected.has(idx) ? 'checked' : '';
@@ -33140,18 +33155,18 @@ function renderSTVDirectTable(rows) {
       <td>${escapeHtml(row.Test_ID)}</td>
       <td>${escapeHtml(row.Device_ID)}</td>
       <td class="col-date">${escapeHtml(row['Test Date-time'] || row.Date)}</td>
-      <td>${escapeHtml(row.pH)}</td>
-      <td>${escapeHtml(row.EC)}</td>
-      <td>${escapeHtml(row.OC)}</td>
-      <td>${escapeHtml(row.Avail_N)}</td>
-      <td>${escapeHtml(row.Avail_P)}</td>
-      <td>${escapeHtml(row.Avail_K)}</td>
-      <td>${escapeHtml(row.Avail_S)}</td>
-      <td>${escapeHtml(row.Zn)}</td>
-      <td>${escapeHtml(row.Cu)}</td>
-      <td>${escapeHtml(row.Fe)}</td>
-      <td>${escapeHtml(row.Mn)}</td>
-      <td>${escapeHtml(row.B)}</td>
+      <td>${_stvNumCell(row.pH)}</td>
+      <td>${_stvNumCell(row.EC)}</td>
+      <td>${_stvNumCell(row.OC)}</td>
+      <td>${_stvNumCell(row.Avail_N)}</td>
+      <td>${_stvNumCell(row.Avail_P)}</td>
+      <td>${_stvNumCell(row.Avail_K)}</td>
+      <td>${_stvNumCell(row.Avail_S)}</td>
+      <td>${_stvNumCell(row.Zn)}</td>
+      <td>${_stvNumCell(row.Cu)}</td>
+      <td>${_stvNumCell(row.Fe)}</td>
+      <td>${_stvNumCell(row.Mn)}</td>
+      <td>${_stvNumCell(row.B)}</td>
     `;
     tbody.appendChild(tr);
   });
